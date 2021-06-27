@@ -1,8 +1,8 @@
-# On-demand self-hosted Huawei Cloud ECS runner for GitHub Actions
+# On-demand self-hosted [Huawei Cloud](https://www.huaweicloud.com/) ECS runner for GitHub Actions
 
 [![Integration Test](https://github.com/messense/huaweicloud-github-runner/actions/workflows/test.yml/badge.svg)](https://github.com/messense/huaweicloud-github-runner/actions/workflows/test.yml)
 
-Start your ECS [self-hosted runner](https://docs.github.com/en/free-pro-team@latest/actions/hosting-your-own-runners) right before you need it.
+Start your [ECS](https://www.huaweicloud.com/product/ecs.html) [self-hosted runner](https://docs.github.com/en/free-pro-team@latest/actions/hosting-your-own-runners) right before you need it.
 Run the job on it.
 Finally, stop it when you finish.
 And all this automatically as a part of your GitHub Actions workflow.
@@ -17,22 +17,29 @@ See [below](#example) the YAML code of the depicted workflow.
 
 Use the following steps to prepare your workflow for running on your ECS self-hosted runner:
 
-1. Prepare IAM user with access keys
-   1. Create new acccess keys for the new or an existing IAM user with required ECS create/query/delete permisions.
-   2. Add the keys to GitHub secrets
-2. Prepare GitHub personal access token
-   1. Create a new GitHub personal access token with the repo scope. The action will use the token for self-hosted runners management in the GitHub account on the repository level.
-   2. Add the token to GitHub secrets.
-3. Prepare VPC with subnet and security group
-   1. Create a new VPC and a new subnet in it. Or use the existing VPC and subnet.
-   2. Create a new security group for the runners in the VPC.
-      Only the outbound traffic on port 443 should be allowed for pulling jobs from GitHub.
-      No inbound traffic is required.
-4. Configure the GitHub workflow
-   1. Create a new GitHub Actions workflow or edit the existing one.
-   2. Use the documentation and example below to configure your workflow.
-   3. Please don't forget to set up a job for removing the ECS instance at the end of the workflow execution.
-      Otherwise, the ECS instance won't be removed and continue to run even after the workflow execution is finished.
+**1. Prepare [IAM](https://console.huaweicloud.com/iam) user with access keys**
+
+1. Create new acccess keys for the new or an existing IAM user with required [ECS server adminstrator](https://support.huaweicloud.com/productdesc-ecs/ecs_01_0059.html#section5) permisions.
+2. Add the keys to GitHub secrets
+
+**2. Prepare GitHub personal access token**
+
+1. Create a new [GitHub personal access token](https://github.com/settings/tokens) with the repo scope. The action will use the token for self-hosted runners management in the GitHub account on the repository level.
+2. Add the token to GitHub secrets.
+
+**3. Prepare VPC with subnet and security group**
+
+1. Create a new VPC and a new subnet in it. Or use the existing VPC and subnet.
+2. Create a new security group for the runners in the VPC.
+   Only the outbound traffic on port 443 should be allowed for pulling jobs from GitHub.
+   No inbound traffic is required.
+
+**4. Configure the GitHub workflow**
+
+1. Create a new GitHub Actions workflow or edit the existing one.
+2. Use the documentation and example below to configure your workflow.
+3. Please don't forget to set up a job for removing the ECS instance at the end of the workflow execution.
+   Otherwise, the ECS instance won't be removed and continue to run even after the workflow execution is finished.
 
 ### Inputs
 
@@ -44,9 +51,9 @@ Use the following steps to prepare your workflow for running on your ECS self-ho
 | `huawei-cloud-sk`                                                                                                                                                            | Always required.                                    | Huawei Cloud SK                                                                                                                                                                                                                     |
 | `project-id`                                                                                                                                                                 | Always required.                                    | Huawei Cloud project id                                                                                                                                                                                                             |
 | `availability-zone`                                                                                                                                                          | Alwasy required.                                    | ECS availability zone                                                                                                                                                                                                               |
-| `ecs-image-id`                                                                                                                                                               | Required if you use the `start` mode.               | ECS Image Id. <br><br> The new runner will be launched from this image. <br><br> The action is compatible with Ubuntu images.                                                                                                       |
-| `ecs-instance-type`                                                                                                                                                          | Required if you use the `start` mode.               | ECS Instance Type.                                                                                                                                                                                                                  |
-| `vpc-id`                                                                                                                                                                     | This input is required if you use the `start` mode. | VPC Id                                                                                                                                                                                                                              |
+| `ecs-image-id`                                                                                                                                                               | Required if you use the `start` mode.               | [ECS Image](https://www.huaweicloud.com/product/ims.html) Id. <br><br> The new runner will be launched from this image. <br><br> The action is compatible with Ubuntu images.                                                       |
+| `ecs-instance-type`                                                                                                                                                          | Required if you use the `start` mode.               | [ECS Instance Type](https://www.huaweicloud.com/product/ecs/instance-types.html).                                                                                                                                                   |
+| `vpc-id`                                                                                                                                                                     | This input is required if you use the `start` mode. | [VPC](https://www.huaweicloud.com/product/vpc.html) Id                                                                                                                                                                              |
 | `subnet-id`                                                                                                                                                                  | Required if you use the `start` mode.               | VPC Subnet Id. <br><br> The subnet should belong to the same VPC as the specified security group.                                                                                                                                   |
 | `security-group-id`                                                                                                                                                          | Required if you use the `start` mode.               | ECS Security Group Id. <br><br> The security group should belong to the same VPC as the specified subnet. <br><br> Only the outbound traffic for port 443 should be allowed. No inbound traffic is required.                        |
 | `label`                                                                                                                                                                      | Required if you use the `stop` mode.                | Name of the unique label assigned to the runner. <br><br> The label is provided by the output of the action in the `start` mode. <br><br> The label is used to remove the runner from GitHub when the runner is not needed anymore. |

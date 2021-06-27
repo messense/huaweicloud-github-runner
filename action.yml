@@ -32,7 +32,7 @@ inputs:
     required: true
   ecs-image-id:
     description: >-
-      ECS Image Id (AMI). The new runner will be launched from this image.
+      ECS Image Id. The new runner will be launched from this image.
       This input is required if you use the 'start' mode.
     required: false
   ecs-instance-type:
