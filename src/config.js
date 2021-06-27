@@ -53,11 +53,11 @@ class Config {
     }
 
     if (this.input.mode === 'start') {
-      if (this.input.availabilityZone || !this.input.ecsImageId || !this.input.ecsInstanceType || !this.input.vpcId || !this.input.subnetId || !this.input.securityGroupId) {
+      if (!this.input.availabilityZone || !this.input.ecsImageId || !this.input.ecsInstanceType || !this.input.vpcId || !this.input.subnetId || !this.input.securityGroupId) {
         throw new Error(`Not all the required inputs are provided for the 'start' mode`);
       }
     } else if (this.input.mode === 'stop') {
-      if (!this.input.label || !this.input.ecsInstanceId) {
+      if (!this.input.label || !this.input.availabilityZone || !this.input.ecsInstanceId) {
         throw new Error(`Not all the required inputs are provided for the 'stop' mode`);
       }
     } else {
@@ -66,7 +66,7 @@ class Config {
   }
 
   generateUniqueLabel() {
-    return 'actions-' + Math.random().toString(36).substr(2, 5);
+    return 'actions-' + Math.random().toString(36).substr(2, 16);
   }
 }
 

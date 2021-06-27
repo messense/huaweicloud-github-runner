@@ -1,0 +1,62 @@
+name: Integration Test
+on: [push]
+
+jobs:
+  start-runner:
+    if: "contains(github.event.head_commit.message, 'run integration test')"
+    name: Start self-hosted ECS runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ecs-runner.outputs.label }}
+      ecs-instance-id: ${{ steps.start-ecs-runner.outputs.ecs-instance-id }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Package
+        run: |
+          npm ci
+          npm run package
+      - name: Start ECS runner
+        id: start-ecs-runner
+        uses: ./
+        with:
+          mode: start
+          github-token: ${{ secrets.GH_PAT }}
+          huawei-cloud-ak: ${{ secrets.HUAWEI_CLOUD_AK }}
+          huawei-cloud-sk: ${{ secrets.HUAWEI_CLOUD_SK }}
+          project-id: ${{ secrets.PROJECT_ID }}
+          availability-zone: ap-southeast-1b
+          ecs-image-id: 93b1fc8d-ee4e-4126-950e-8f4404408acc
+          ecs-instance-type: kc1.large.2
+          vpc-id: ${{ secrets.VPC_ID }}
+          subnet-id: ${{ secrets.SUBNET_ID }}
+          security-group-id: ${{ secrets.SECURITY_GROUP_ID }}
+  do-the-job:
+    name: Do the job on the runner
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Hello World
+        run: echo 'Hello World!'
+  stop-runner:
+    name: Stop self-hosted ECS runner
+    needs: [start-runner, do-the-job]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Package
+        run: |
+          npm ci
+          npm run package
+      - name: Stop ECS runner
+        if: ${{ needs.start-runner.outputs.ecs-instance-id }}
+        uses: ./
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PAT }}
+          huawei-cloud-ak: ${{ secrets.HUAWEI_CLOUD_AK }}
+          huawei-cloud-sk: ${{ secrets.HUAWEI_CLOUD_SK }}
+          project-id: ${{ secrets.PROJECT_ID }}
+          availability-zone: ap-southeast-1b
+          label: ${{ needs.start-runner.outputs.label }}
+          ecs-instance-id: ${{ needs.start-runner.outputs.ecs-instance-id }}

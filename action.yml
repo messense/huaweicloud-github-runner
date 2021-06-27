@@ -23,14 +23,13 @@ inputs:
     description: >-
       Huwawei Cloud SK
     required: true
-  project_id:
+  project-id:
     description: Huawei Cloud project Id
     required: true
   availability-zone: 
     description: >-
       ECS availability zone
-      This input is required if you use the 'start' mode.
-    required: false
+    required: true
   ecs-image-id:
     description: >-
       ECS Image Id (AMI). The new runner will be launched from this image.

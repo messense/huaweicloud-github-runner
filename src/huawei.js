@@ -1,9 +1,10 @@
-const core = require('@huaweicloud/huaweicloud-sdk-core');
+const core = require('@actions/core');
+const sdkcore = require('@huaweicloud/huaweicloud-sdk-core');
 const ecs = require("@huaweicloud/huaweicloud-sdk-ecs");
 const config = require('./config');
 
 function createEcsClient() {
-    const credentials = new core.BasicCredentials()
+    const credentials = new sdkcore.BasicCredentials()
         .withAk(config.input.ak)
         .withSk(config.input.sk)
         .withProjectId(config.input.projectId)
@@ -17,11 +18,12 @@ function createEcsClient() {
 
 async function waitForInstanceRunning(client, jobId) {
     const sleep = (waitTimeInMs) => new Promise(resolve => setTimeout(resolve, waitTimeInMs));
-    const request = new ecs.ShowJobRequest(jobId);
+    const request = new ecs.ShowJobRequest();
+    request.jobId = jobId;
     for (; ;) {
-        const result = await client.showJob(request);
+        const result = (await client.showJob(request)).result;
         if (result.status === ecs.ShowJobResponseStatusEnum.SUCCESS) {
-            break;
+            return;
         } else if (result.status == ecs.ShowJobResponseStatusEnum.FAIL) {
             throw new Error(`Wait for instance running error: ${result.failReason}`);
         } else {
@@ -49,69 +51,96 @@ async function startEcsInstance(label, githubRegistrationToken) {
         'rm ./actions-runner-linux-${RUNNER_ARCH}-2.278.0.tar.gz',
         'export RUNNER_ALLOW_RUNASROOT=1',
         'export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1',
-        `./config.sh --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}`,
+        `./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}`,
         './run.sh',
     ];
     const client = createEcsClient();
-    const body = ecs.CreateServersRequestBody({
-        name: label,
-        imageRef: config.input.ecsImageId,
-        flavorRef: config.input.ecsInstanceType,
-        user_data: Buffer.from(userData.join('\n')).toString('base64'),
-        vpcid: config.input.vpcId,
-        nics: {
-            subnet_id: config.input.subnetId
-        },
-        publicip: {
-            eip: {
-                iptype: '5_bgp',
-                bandwidth: {
-                    size: 300,
-                    sharetype: 'PER',
-                    chargemode: 'traffic'
-                },
-                extendparam: {
-                    chargingMode: 'postPaid'
-                }
-            }
-        },
-        root_volume: {
-            volumetype: 'SSD',
-            size: 40
-        },
-        security_groups: [
-            { id: config.input.securityGroupId }
-        ],
-        availability_zone: config.input.availabilityZone,
-        extendparam: {
-            chargingMode: 'postPaid',
-            isAutoPay: true
-        },
-        server_tags: config.input.serverTags
-    });
-    const request = new ecs.CreateServersRequest().withBody(body);
+    const request = new ecs.CreateServersRequest();
+    const body = new ecs.CreateServersRequestBody();
+    const listServerServerTags = new Array();
+    if (config.input.serverTags && config.input.serverTags.length > 0) {
+        for (const tag of config.input.serverTags) {
+            listServerServerTags.push(
+                new ecs.PostPaidServerTag()
+                    .withKey(tag.key)
+                    .withValue(tag.value)
+            );
+        }
+    }
+    const extendparamServer = new ecs.PostPaidServerExtendParam();
+    const listServerSecurityGroups = new Array();
+    listServerSecurityGroups.push(
+        new ecs.PostPaidServerSecurityGroup()
+            .withId(config.input.securityGroupId)
+    );
+    const rootVolumeServer = new ecs.PostPaidServerRootVolume();
+    rootVolumeServer.withVolumetype(ecs.PostPaidServerRootVolumeVolumetypeEnum.SSD)
+        .withSize(40);
+    const extendparamEip = new ecs.PostPaidServerEipExtendParam();
+    extendparamEip.withChargingMode(ecs.PostPaidServerEipExtendParamChargingModeEnum.POSTPAID);
+    const bandwidthEip = new ecs.PostPaidServerEipBandwidth();
+    bandwidthEip.withSize(300)
+        .withSharetype(ecs.PostPaidServerEipBandwidthSharetypeEnum.PER)
+        .withChargemode("traffic");
+    const eipPublicip = new ecs.PostPaidServerEip();
+    eipPublicip.withIptype("5_bgp")
+        .withBandwidth(bandwidthEip)
+        .withExtendparam(extendparamEip);
+    const publicipServer = new ecs.PostPaidServerPublicip();
+    publicipServer.withEip(eipPublicip);
+    const listServerNics = new Array();
+    listServerNics.push(
+        new ecs.PostPaidServerNic()
+            .withSubnetId(config.input.subnetId)
+    );
+    const serverbody = new ecs.PostPaidServer();
+    serverbody.withImageRef(config.input.ecsImageId)
+        .withFlavorRef(config.input.ecsInstanceType)
+        .withName(label)
+        .withUserData(Buffer.from(userData.join('\n')).toString('base64'))
+        .withVpcid(config.input.vpcId)
+        .withNics(listServerNics)
+        .withPublicip(publicipServer)
+        .withRootVolume(rootVolumeServer)
+        .withSecurityGroups(listServerSecurityGroups)
+        .withAvailabilityZone(config.input.availabilityZone)
+        .withExtendparam(extendparamServer)
+        .withServerTags(listServerServerTags);
+    body.withServer(serverbody);
+    request.withBody(body);
     try {
-        const result = await client.createServers(request);
+        const result = (await client.createServers(request)).result;
         const instanceId = result.serverIds[0];
-        await waitForInstanceRunning(client, result.jobId);
+        const jobId = result.job_id;
+        core.info(`ECS instance ${instanceId} created, waiting for job ${jobId} running...`);
+        await waitForInstanceRunning(client, jobId);
+        core.info(`ECS instance ${instanceId} is now ready.`);
         return instanceId;
     } catch (error) {
-        core.error('Huawei Cloud ECS instance starting error');
+        core.setFailed(`Huawei Cloud ECS instance starting error: ${error.errorMsg}`);
         throw error;
     }
 }
 
 async function terminateEcsInstance() {
     const client = createEcsClient();
-    const request = new ecs.DeleteServersRequest().withBody(new ecs.DeleteServersRequestBody([
-        { id: config.input.ecsInstanceId }
-    ]).withDeleteVolume(true).withDeletePublicip(true));
+    const request = new ecs.DeleteServersRequest();
+    const body = new ecs.DeleteServersRequestBody();
+    const listbodyServers = new Array();
+    listbodyServers.push(
+        new ecs.ServerId()
+            .withId(config.input.ecsInstanceId)
+    );
+    body.withServers(listbodyServers);
+    body.withDeleteVolume(true);
+    body.withDeletePublicip(true);
+    request.withBody(body);
     try {
         await client.deleteServers(request);
         core.info(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} is terminated`);
         return;
     } catch (error) {
-        core.error(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} termination error`);
+        core.setFailed(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} termination error: ${error.errorMsg}`);
         throw error;
     }
 }
