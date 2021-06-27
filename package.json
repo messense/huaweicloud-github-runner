@@ -1,0 +1,23 @@
+{
+  "name": "huaweicloud-github-runner",
+  "description": "GitHub Action for automatic creation and registration Huawei Cloud ECS instance as a GitHub Actions self-hosted runner.",
+  "author": "messense",
+  "license": "MIT",
+  "scripts": {
+    "index": "node -r dotenv/config ./src/index.js",
+    "lint": "eslint ./src/*.js",
+    "package": "ncc build ./src/index.js"
+  },
+  "dependencies": {
+    "@actions/core": "^1.4.0",
+    "@actions/github": "^5.0.0",
+    "@huaweicloud/huaweicloud-sdk-core": "^3.0.8-beta",
+    "@huaweicloud/huaweicloud-sdk-ecs": "^3.0.8-beta",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.28.6",
+    "dotenv": "^10.0.0",
+    "eslint": "^7.29.0"
+  }
+}
