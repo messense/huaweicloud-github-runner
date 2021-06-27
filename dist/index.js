@@ -57983,8 +57983,13 @@ class Config {
     this.input = {
       mode: core.getInput('mode'),
       githubToken: core.getInput('github-token'),
+      ak: core.getInput('huawei-cloud-ak'),
+      sk: core.getInput('huawei-cloud-sk'),
+      projectId: core.getInput('project-id'),
       ecsImageId: core.getInput('ecs-image-id'),
       ecsInstanceType: core.getInput('ecs-instance-type'),
+      availabilityZone: core.getInput('availability-zone'),
+      vpcId: core.getInput('vpc-id'),
       subnetId: core.getInput('subnet-id'),
       securityGroupId: core.getInput('security-group-id'),
       label: core.getInput('label'),
@@ -58012,8 +58017,20 @@ class Config {
       throw new Error(`The 'github-token' input is not specified`);
     }
 
+    if (!this.input.ak) {
+      throw new Error("The 'huawei-cloud-ak' input is not specified");
+    }
+
+    if (!this.input.sk) {
+      throw new Error("The 'huawei-cloud-ak' input is not specified");
+    }
+
+    if (!this.input.projectId) {
+      throw new Error("The 'project-id' input is not specified");
+    }
+
     if (this.input.mode === 'start') {
-      if (!this.input.ecsImageId || !this.input.ecsInstanceType || !this.input.subnetId || !this.input.securityGroupId) {
+      if (this.input.availabilityZone || !this.input.ecsImageId || !this.input.ecsInstanceType || !this.input.vpcId || !this.input.subnetId || !this.input.securityGroupId) {
         throw new Error(`Not all the required inputs are provided for the 'start' mode`);
       }
     } else if (this.input.mode === 'stop') {
@@ -58146,12 +58163,14 @@ const config = __nccwpck_require__(4570);
 
 function createEcsClient() {
     const credentials = new core.BasicCredentials()
-        .withAk('')
-        .withSk('')
-        .withProjectId('')
+        .withAk(config.input.ak)
+        .withSk(config.input.sk)
+        .withProjectId(config.input.projectId)
+    const region = config.input.availabilityZone.slice(0, config.input.availabilityZone.length - 1);
+    const endpoint = `https://ecs.${region}.myhuaweicloud.com`;
     return ecs.EcsClient.newBuilder()
         .withCredential(credentials)
-        .withEndpoint('')
+        .withEndpoint(endpoint)
         .build();
 }
 
@@ -58198,7 +58217,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         imageRef: config.input.ecsImageId,
         flavorRef: config.input.ecsInstanceType,
         user_data: Buffer.from(userData.join('\n')).toString('base64'),
-        vpcid: 'TODO',
+        vpcid: config.input.vpcId,
         nics: {
             subnet_id: config.input.subnetId
         },
@@ -58209,16 +58228,20 @@ async function startEcsInstance(label, githubRegistrationToken) {
                     size: 300,
                     sharetype: 'PER',
                     chargemode: 'traffic'
+                },
+                extendparam: {
+                    chargingMode: 'postPaid'
                 }
             }
         },
         root_volume: {
-            volumetype: 'SSD'
+            volumetype: 'SSD',
+            size: 40
         },
         security_groups: [
             { id: config.input.securityGroupId }
         ],
-        availability_zone: 'TODO',
+        availability_zone: config.input.availabilityZone,
         extendparam: {
             chargingMode: 'postPaid',
             isAutoPay: true
