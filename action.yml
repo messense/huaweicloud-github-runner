@@ -15,6 +15,22 @@ inputs:
     description: >-
       GitHub Personal Access Token with the 'repo' scope assigned.
     required: true
+  huawei-cloud-ak:
+    description: >-
+      Huawei Cloud AK
+    required: true
+  huawei-cloud-sk:
+    description: >-
+      Huwawei Cloud SK
+    required: true
+  project_id:
+    description: Huawei Cloud project Id
+    required: true
+  availability-zone: 
+    description: >-
+      ECS availability zone
+      This input is required if you use the 'start' mode.
+    required: false
   ecs-image-id:
     description: >-
       ECS Image Id (AMI). The new runner will be launched from this image.
@@ -23,6 +39,11 @@ inputs:
   ecs-instance-type:
     description: >-
       ECS Instance Type. 
+      This input is required if you use the 'start' mode.
+    required: false
+  vpc-id:
+    description: >-
+      VPC Id
       This input is required if you use the 'start' mode.
     required: false
   subnet-id:
