@@ -27,14 +27,18 @@ Use the following steps to prepare your workflow for running on your ECS self-ho
 1. Create a new [GitHub personal access token](https://github.com/settings/tokens) with the repo scope. The action will use the token for self-hosted runners management in the GitHub account on the repository level.
 2. Add the token to GitHub secrets.
 
-**3. Prepare VPC with subnet and security group**
+**3. Prepare ECS image (optional)**
+
+1. You can use the default Ubuntu/CentOS image, but it's recommended to create your own image with Docker pre-installed.
+
+**4. Prepare VPC with subnet and security group**
 
 1. Create a new VPC and a new subnet in it. Or use the existing VPC and subnet.
 2. Create a new security group for the runners in the VPC.
    Only the outbound traffic on port 443 should be allowed for pulling jobs from GitHub.
    No inbound traffic is required.
 
-**4. Configure the GitHub workflow**
+**5. Configure the GitHub workflow**
 
 1. Create a new GitHub Actions workflow or edit the existing one.
 2. Use the documentation and example below to configure your workflow.
