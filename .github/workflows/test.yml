@@ -37,6 +37,7 @@ jobs:
     steps:
       - name: Hello World
         run: echo 'Hello World!'
+      - run: docker info
   stop-runner:
     name: Stop self-hosted ECS runner
     needs: [start-runner, do-the-job]

@@ -35,25 +35,32 @@ async function waitForInstanceRunning(client, jobId) {
 async function startEcsInstance(label, githubRegistrationToken) {
     // User data scripts are run as the root user.
     // Docker and git are necessary for GitHub runner and should be pre-installed on the AMI.
-    const userData = [
-        '#!/bin/bash',
-        'apt-get update',
-        'apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release',
-        'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg',
-        'case $(uname -m) in aarch64) export DOCKER_ARCH="arm64" ;; amd64|x86_64) export DOCKER_ARCH="amd64" ;; esac',
-        'echo "deb [arch=${DOCKER_ARCH} signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
-        'apt-get update',
-        'apt-get install -y docker-ce docker-ce-cli containerd.io',
-        'mkdir actions-runner && cd actions-runner',
-        'case $(uname -m) in aarch64) ARCH="arm64" ;; amd64|x86_64) ARCH="x64" ;; esac && export RUNNER_ARCH=${ARCH}',
-        'curl -O -L https://github.com/actions/runner/releases/download/v2.278.0/actions-runner-linux-${RUNNER_ARCH}-2.278.0.tar.gz',
-        'tar xzf ./actions-runner-linux-${RUNNER_ARCH}-2.278.0.tar.gz',
-        'rm ./actions-runner-linux-${RUNNER_ARCH}-2.278.0.tar.gz',
-        'export RUNNER_ALLOW_RUNASROOT=1',
-        'export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1',
-        `./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}`,
-        './run.sh',
-    ];
+    const userData = `#!/bin/bash
+        if ! [ -x "$(command -v docker)" ]; then
+            if [ -x "$(command -v apt-get)" ]; then
+                apt-get update
+                apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                case $(uname -m) in aarch64) export DOCKER_ARCH="arm64" ;; amd64|x86_64) export DOCKER_ARCH="amd64" ;; esac
+                echo "deb [arch=$DOCKER_ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                apt-get update
+                apt-get install -y docker-ce docker-ce-cli containerd.io
+            elif [ -x "$(command -v yum)" ]; then
+                yum install -y yum-utils
+                yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                yum install -y docker-ce docker-ce-cli containerd.io
+            fi
+        fi
+
+        mkdir actions-runner && cd actions-runner
+        case $(uname -m) in aarch64) ARCH="arm64" ;; amd64|x86_64) ARCH="x64" ;; esac && export RUNNER_ARCH=$ARCH
+        curl -O -L https://github.com/actions/runner/releases/download/v2.278.0/actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
+        tar xzf ./actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
+        rm ./actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
+        export RUNNER_ALLOW_RUNASROOT=1
+        export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}
+        ./run.sh`;
     const client = createEcsClient();
     const request = new ecs.CreateServersRequest();
     const body = new ecs.CreateServersRequestBody();
@@ -97,7 +104,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
     serverbody.withImageRef(config.input.ecsImageId)
         .withFlavorRef(config.input.ecsInstanceType)
         .withName(label)
-        .withUserData(Buffer.from(userData.join('\n')).toString('base64'))
+        .withUserData(Buffer.from(userData).toString('base64'))
         .withVpcid(config.input.vpcId)
         .withNics(listServerNics)
         .withPublicip(publicipServer)
