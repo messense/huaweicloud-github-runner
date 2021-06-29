@@ -57995,6 +57995,7 @@ class Config {
       label: core.getInput('label'),
       ecsInstanceId: core.getInput('ecs-instance-id'),
       serverTags: JSON.parse(core.getInput('server-tags')) || [],
+      count: parseInt(core.getInput('count')),
     };
 
     // the values of github.context.repo.owner and github.context.repo.repo are taken from
@@ -58043,7 +58044,7 @@ class Config {
   }
 
   generateUniqueLabel() {
-    return 'actions-' + Math.random().toString(36).substr(2, 16);
+    return 'actions-' + Math.random().toString(36).substr(2, 8);
   }
 }
 
@@ -58067,13 +58068,13 @@ const config = __nccwpck_require__(4570);
 
 // use the unique label to find the runner
 // as we don't have the runner's id, it's not possible to get it in any other way
-async function getRunner(label) {
+async function getRunners(label) {
   const octokit = github.getOctokit(config.input.githubToken);
 
   try {
     const runners = await octokit.paginate('GET /repos/{owner}/{repo}/actions/runners', config.githubContext);
     const foundRunners = _.filter(runners, { labels: [{ name: label }] });
-    return foundRunners.length > 0 ? foundRunners[0] : null;
+    return foundRunners.length > 0 ? foundRunners : null;
   } catch (error) {
     return null;
   }
@@ -58094,22 +58095,29 @@ async function getRegistrationToken() {
 }
 
 async function removeRunner() {
-  const runner = await getRunner(config.input.label);
+  const runners = await getRunners(config.input.label);
   const octokit = github.getOctokit(config.input.githubToken);
 
   // skip the runner removal process if the runner is not found
-  if (!runner) {
+  if (!runners) {
     core.info(`GitHub self-hosted runner with label ${config.input.label} is not found, so the removal is skipped`);
     return;
   }
 
-  try {
-    await octokit.request('DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}', _.merge(config.githubContext, { runner_id: runner.id }));
-    core.info(`GitHub self-hosted runner ${runner.name} is removed`);
-    return;
-  } catch (error) {
-    core.error('GitHub self-hosted runner removal error');
-    throw error;
+  let firstError = null;
+  for (const runner of runners) {
+    try {
+      await octokit.request('DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}', _.merge(config.githubContext, { runner_id: runner.id }));
+      core.info(`GitHub self-hosted runner ${runner.name} is removed`);
+    } catch (error) {
+      core.error(`GitHub self-hosted runner removal error: ${error}`);
+      if (firstError === null) {
+        firstError = error;
+      }
+    }
+  }
+  if (firstError) {
+    throw firstError;
   }
 }
 
@@ -58125,7 +58133,7 @@ async function waitForRunnerRegistered(label) {
 
   return new Promise((resolve, reject) => {
     const interval = setInterval(async () => {
-      const runner = await getRunner(label);
+      const runners = await getRunners(label);
 
       if (waitSeconds > timeoutMinutes * 60) {
         core.error('GitHub self-hosted runner registration error');
@@ -58133,8 +58141,9 @@ async function waitForRunnerRegistered(label) {
         reject(`A timeout of ${timeoutMinutes} minutes is exceeded. Your Huawei Cloud ECS instance was not able to register itself in GitHub as a new self-hosted runner.`);
       }
 
-      if (runner && runner.status === 'online') {
-        core.info(`GitHub self-hosted runner ${runner.name} is registered and ready to use`);
+      if (runners && _.every(runners, { status: 'online' })) {
+        const runnerNames = runners.map(runner => runner.name).join(',');
+        core.info(`GitHub self-hosted runner ${runnerNames} registered and ready to use`);
         clearInterval(interval);
         resolve();
       } else {
@@ -58218,7 +58227,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         rm ./actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
         export RUNNER_ALLOW_RUNASROOT=1
         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}
+        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label},huaweicloud
         ./run.sh`;
     const client = createEcsClient();
     const request = new ecs.CreateServersRequest();
@@ -58267,6 +58276,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         .withVpcid(config.input.vpcId)
         .withNics(listServerNics)
         .withPublicip(publicipServer)
+        .withCount(config.input.count)
         .withRootVolume(rootVolumeServer)
         .withSecurityGroups(listServerSecurityGroups)
         .withAvailabilityZone(config.input.availabilityZone)
@@ -58276,12 +58286,12 @@ async function startEcsInstance(label, githubRegistrationToken) {
     request.withBody(body);
     try {
         const result = (await client.createServers(request)).result;
-        const instanceId = result.serverIds[0];
+        const instanceIds = result.serverIds.join(',');
         const jobId = result.job_id;
-        core.info(`ECS instance ${instanceId} created, waiting for job ${jobId} running...`);
+        core.info(`ECS instance ${instanceIds} created, waiting for job ${jobId} running...`);
         await waitForInstanceRunning(client, jobId);
-        core.info(`ECS instance ${instanceId} is now ready.`);
-        return instanceId;
+        core.info(`ECS instance ${instanceIds} ready for work.`);
+        return instanceIds;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance starting error: ${error.errorMsg}`);
         throw error;
@@ -58293,17 +58303,20 @@ async function terminateEcsInstance() {
     const request = new ecs.DeleteServersRequest();
     const body = new ecs.DeleteServersRequestBody();
     const listbodyServers = new Array();
-    listbodyServers.push(
-        new ecs.ServerId()
-            .withId(config.input.ecsInstanceId)
-    );
+    const instanceIds = config.input.ecsInstanceId.split(',');
+    for (const instanceId of instanceIds) {
+        listbodyServers.push(
+            new ecs.ServerId()
+                .withId(instanceId)
+        );
+    }
     body.withServers(listbodyServers);
     body.withDeleteVolume(true);
     body.withDeletePublicip(true);
     request.withBody(body);
     try {
         await client.deleteServers(request);
-        core.info(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} is terminated`);
+        core.info(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} terminated`);
         return;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} termination error: ${error.errorMsg}`);
