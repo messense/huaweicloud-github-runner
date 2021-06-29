@@ -25,18 +25,24 @@ jobs:
           huawei-cloud-sk: ${{ secrets.HUAWEI_CLOUD_SK }}
           project-id: ${{ secrets.PROJECT_ID }}
           availability-zone: ap-southeast-1b
-          ecs-image-id: 93b1fc8d-ee4e-4126-950e-8f4404408acc
+          ecs-image-id: 3021e45a-5c5b-47ae-920d-2a240d3f26d9
           ecs-instance-type: kc1.large.2
           vpc-id: ${{ secrets.VPC_ID }}
           subnet-id: ${{ secrets.SUBNET_ID }}
           security-group-id: ${{ secrets.SECURITY_GROUP_ID }}
+          count: 2
   do-the-job:
     name: Do the job on the runner
     needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    runs-on: [self-hosted, huaweicloud]
+    strategy:
+      matrix:
+        command:
+          - echo 'Hello'
+          - echo 'World'
     steps:
       - name: Hello World
-        run: echo 'Hello World!'
+        run: ${{ matrix.command }}
       - run: docker info
   stop-runner:
     name: Stop self-hosted ECS runner

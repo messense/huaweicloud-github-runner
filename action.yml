@@ -76,6 +76,11 @@ inputs:
       for example: '[{"key": "TagKey1", "value": "TagValue1"}, {"key": "TagKey2", "value": "TagValue2"}]'
     required: false
     default: '[]'
+  count:
+    description: >-
+      ECS instance count, defaults to 1
+    required: false
+    default: '1'
 outputs:
   label:
     description: >-

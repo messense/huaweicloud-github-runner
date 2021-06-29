@@ -18,6 +18,7 @@ class Config {
       label: core.getInput('label'),
       ecsInstanceId: core.getInput('ecs-instance-id'),
       serverTags: JSON.parse(core.getInput('server-tags')) || [],
+      count: parseInt(core.getInput('count')),
     };
 
     // the values of github.context.repo.owner and github.context.repo.repo are taken from
@@ -66,7 +67,7 @@ class Config {
   }
 
   generateUniqueLabel() {
-    return 'actions-' + Math.random().toString(36).substr(2, 16);
+    return 'actions-' + Math.random().toString(36).substr(2, 8);
   }
 }
 

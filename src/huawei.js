@@ -59,7 +59,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         rm ./actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
         export RUNNER_ALLOW_RUNASROOT=1
         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label}
+        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label},huaweicloud
         ./run.sh`;
     const client = createEcsClient();
     const request = new ecs.CreateServersRequest();
@@ -108,6 +108,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         .withVpcid(config.input.vpcId)
         .withNics(listServerNics)
         .withPublicip(publicipServer)
+        .withCount(config.input.count)
         .withRootVolume(rootVolumeServer)
         .withSecurityGroups(listServerSecurityGroups)
         .withAvailabilityZone(config.input.availabilityZone)
@@ -117,12 +118,12 @@ async function startEcsInstance(label, githubRegistrationToken) {
     request.withBody(body);
     try {
         const result = (await client.createServers(request)).result;
-        const instanceId = result.serverIds[0];
+        const instanceIds = result.serverIds.join(',');
         const jobId = result.job_id;
-        core.info(`ECS instance ${instanceId} created, waiting for job ${jobId} running...`);
+        core.info(`ECS instance ${instanceIds} created, waiting for job ${jobId} running...`);
         await waitForInstanceRunning(client, jobId);
-        core.info(`ECS instance ${instanceId} is now ready.`);
-        return instanceId;
+        core.info(`ECS instance ${instanceIds} ready for work.`);
+        return instanceIds;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance starting error: ${error.errorMsg}`);
         throw error;
@@ -134,17 +135,20 @@ async function terminateEcsInstance() {
     const request = new ecs.DeleteServersRequest();
     const body = new ecs.DeleteServersRequestBody();
     const listbodyServers = new Array();
-    listbodyServers.push(
-        new ecs.ServerId()
-            .withId(config.input.ecsInstanceId)
-    );
+    const instanceIds = config.input.ecsInstanceId.split(',');
+    for (const instanceId of instanceIds) {
+        listbodyServers.push(
+            new ecs.ServerId()
+                .withId(instanceId)
+        );
+    }
     body.withServers(listbodyServers);
     body.withDeleteVolume(true);
     body.withDeletePublicip(true);
     request.withBody(body);
     try {
         await client.deleteServers(request);
-        core.info(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} is terminated`);
+        core.info(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} terminated`);
         return;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance ${config.input.ecsInstanceId} termination error: ${error.errorMsg}`);
