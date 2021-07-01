@@ -58171,6 +58171,11 @@ const sdkcore = __nccwpck_require__(4820);
 const ecs = __nccwpck_require__(9108);
 const config = __nccwpck_require__(4570);
 
+function setOutput(label, ecsInstanceId) {
+    core.setOutput('label', label);
+    core.setOutput('ecs-instance-id', ecsInstanceId);
+}
+
 function createEcsClient() {
     const credentials = new sdkcore.BasicCredentials()
         .withAk(config.input.ak)
@@ -58289,9 +58294,10 @@ async function startEcsInstance(label, githubRegistrationToken) {
         const instanceIds = result.serverIds.join(',');
         const jobId = result.job_id;
         core.info(`ECS instance ${instanceIds} created, waiting for job ${jobId} running...`);
+        setOutput(label, instanceIds);
+
         await waitForInstanceRunning(client, jobId);
         core.info(`ECS instance ${instanceIds} ready for work.`);
-        return instanceIds;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance starting error: ${error.errorMsg}`);
         throw error;
@@ -58548,16 +58554,10 @@ const huawei = __nccwpck_require__(8472);
 const config = __nccwpck_require__(4570);
 const core = __nccwpck_require__(2186);
 
-function setOutput(label, ecsInstanceId) {
-  core.setOutput('label', label);
-  core.setOutput('ecs-instance-id', ecsInstanceId);
-}
-
 async function start() {
   const label = config.generateUniqueLabel();
   const githubRegistrationToken = await gh.getRegistrationToken();
-  const ecsInstanceId = await huawei.startEcsInstance(label, githubRegistrationToken);
-  setOutput(label, ecsInstanceId);
+  await huawei.startEcsInstance(label, githubRegistrationToken);
   await gh.waitForRunnerRegistered(label);
 }
 
