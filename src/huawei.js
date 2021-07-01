@@ -57,6 +57,9 @@ async function startEcsInstance(label, githubRegistrationToken) {
             fi
         fi
 
+        mkdir -p /root
+        export HOME=/root
+
         mkdir actions-runner && cd actions-runner
         case $(uname -m) in aarch64) ARCH="arm64" ;; amd64|x86_64) ARCH="x64" ;; esac && export RUNNER_ARCH=$ARCH
         curl -O -L https://github.com/actions/runner/releases/download/v2.278.0/actions-runner-linux-$RUNNER_ARCH-2.278.0.tar.gz
