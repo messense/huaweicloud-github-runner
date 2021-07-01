@@ -3,6 +3,11 @@ const sdkcore = require('@huaweicloud/huaweicloud-sdk-core');
 const ecs = require("@huaweicloud/huaweicloud-sdk-ecs");
 const config = require('./config');
 
+function setOutput(label, ecsInstanceId) {
+    core.setOutput('label', label);
+    core.setOutput('ecs-instance-id', ecsInstanceId);
+}
+
 function createEcsClient() {
     const credentials = new sdkcore.BasicCredentials()
         .withAk(config.input.ak)
@@ -121,9 +126,10 @@ async function startEcsInstance(label, githubRegistrationToken) {
         const instanceIds = result.serverIds.join(',');
         const jobId = result.job_id;
         core.info(`ECS instance ${instanceIds} created, waiting for job ${jobId} running...`);
+        setOutput(label, instanceIds);
+
         await waitForInstanceRunning(client, jobId);
         core.info(`ECS instance ${instanceIds} ready for work.`);
-        return instanceIds;
     } catch (error) {
         core.setFailed(`Huawei Cloud ECS instance starting error: ${error.errorMsg}`);
         throw error;

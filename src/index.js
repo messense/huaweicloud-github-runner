@@ -3,16 +3,10 @@ const huawei = require('./huawei');
 const config = require('./config');
 const core = require('@actions/core');
 
-function setOutput(label, ecsInstanceId) {
-  core.setOutput('label', label);
-  core.setOutput('ecs-instance-id', ecsInstanceId);
-}
-
 async function start() {
   const label = config.generateUniqueLabel();
   const githubRegistrationToken = await gh.getRegistrationToken();
-  const ecsInstanceId = await huawei.startEcsInstance(label, githubRegistrationToken);
-  setOutput(label, ecsInstanceId);
+  await huawei.startEcsInstance(label, githubRegistrationToken);
   await gh.waitForRunnerRegistered(label);
 }
 
