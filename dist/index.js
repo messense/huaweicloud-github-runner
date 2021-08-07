@@ -58558,6 +58558,10 @@ const config = __nccwpck_require__(4570);
 const core = __nccwpck_require__(2186);
 
 async function start() {
+  if (config.input.count < 1) {
+    core.info("Skip creating Huawei Cloud ECS instances since 'count' < 1");
+    return;
+  }
   const label = config.generateUniqueLabel();
   const githubRegistrationToken = await gh.getRegistrationToken();
   await huawei.startEcsInstance(label, githubRegistrationToken);
