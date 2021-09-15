@@ -67,7 +67,7 @@ async function startEcsInstance(label, githubRegistrationToken) {
         rm ./actions-runner-linux-$RUNNER_ARCH-2.282.0.tar.gz
         export RUNNER_ALLOW_RUNASROOT=1
         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-        ./config.sh --unattended --ephemeral --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label},huaweicloud
+        ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label},huaweicloud
         ./run.sh`;
     const client = createEcsClient();
     const request = new ecs.CreateServersRequest();
