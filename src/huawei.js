@@ -62,9 +62,9 @@ async function startEcsInstance(label, githubRegistrationToken) {
 
         mkdir actions-runner && cd actions-runner
         case $(uname -m) in aarch64) ARCH="arm64" ;; amd64|x86_64) ARCH="x64" ;; esac && export RUNNER_ARCH=$ARCH
-        curl -O -L https://github.com/actions/runner/releases/download/v2.282.1/actions-runner-linux-$RUNNER_ARCH-2.282.1.tar.gz
-        tar xzf ./actions-runner-linux-$RUNNER_ARCH-2.282.1.tar.gz
-        rm ./actions-runner-linux-$RUNNER_ARCH-2.282.1.tar.gz
+        curl -O -L https://github.com/actions/runner/releases/download/v2.283.0/actions-runner-linux-$RUNNER_ARCH-2.283.0.tar.gz
+        tar xzf ./actions-runner-linux-$RUNNER_ARCH-2.283.0.tar.gz
+        rm ./actions-runner-linux-$RUNNER_ARCH-2.283.0.tar.gz
         export RUNNER_ALLOW_RUNASROOT=1
         export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
         ./config.sh --unattended --url https://github.com/${config.githubContext.owner}/${config.githubContext.repo} --token ${githubRegistrationToken} --labels ${label},huaweicloud
