@@ -13531,7 +13531,7 @@ exports.PostPaidServer = PostPaidServer;
 
 /***/ }),
 
-/***/ 9998:
+/***/ 3346:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -18801,7 +18801,7 @@ __exportStar(__nccwpck_require__(3270), exports);
 __exportStar(__nccwpck_require__(6874), exports);
 __exportStar(__nccwpck_require__(3399), exports);
 __exportStar(__nccwpck_require__(1710), exports);
-__exportStar(__nccwpck_require__(9998), exports);
+__exportStar(__nccwpck_require__(3346), exports);
 __exportStar(__nccwpck_require__(8965), exports);
 __exportStar(__nccwpck_require__(5444), exports);
 __exportStar(__nccwpck_require__(7741), exports);
@@ -21434,7 +21434,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 const events_1 = __nccwpck_require__(8614);
 const debug_1 = __importDefault(__nccwpck_require__(8237));
-const promisify_1 = __importDefault(__nccwpck_require__(54));
+const promisify_1 = __importDefault(__nccwpck_require__(6570));
 const debug = debug_1.default('agent-base');
 function isAgent(v) {
     return Boolean(v) && typeof v.addRequest === 'function';
@@ -21634,7 +21634,7 @@ module.exports = createAgent;
 
 /***/ }),
 
-/***/ 54:
+/***/ 6570:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -24170,13 +24170,9 @@ function offset(timezoneOffset) {
   var os = Math.abs(timezoneOffset);
   var h = String(Math.floor(os / 60));
   var m = String(os % 60);
-  if (h.length === 1) {
-    h = "0" + h;
-  }
-  if (m.length === 1) {
-    m = "0" + m;
-  }
-  return timezoneOffset < 0 ? "+" + h + m : "-" + h + m;
+  h = ("0" + h).slice(-2);
+  m = ("0" + m).slice(-2);
+  return timezoneOffset === 0 ? "Z" : (timezoneOffset < 0 ? "+" : "-") + h + ":" + m;
 }
 
 function asString(format, date) {
@@ -24275,10 +24271,13 @@ function extractDateParts(pattern, str, missingValuesDate) {
     },
     {
       pattern: /O/,
-      regexp: "[+-]\\d{3,4}|Z",
+      regexp: "[+-]\\d{1,2}:?\\d{2}?|Z",
       fn: function(date, value) {
         if (value === "Z") {
           value = 0;
+        }
+        else {
+          value = value.replace(":", "");
         }
         var offset = Math.abs(value);
         var timezoneOffset = (value > 0 ? -1 :  1 ) * ((offset % 100) + Math.floor(offset / 100) * 60);
@@ -24685,7 +24684,7 @@ function setup(env) {
 
 	/**
 	* Selects a color for a debug namespace
-	* @param {String} namespace The namespace string for the for the debug instance to be colored
+	* @param {String} namespace The namespace string for the debug instance to be colored
 	* @return {Number|String} An ANSI color code for the given namespace
 	* @api private
 	*/
@@ -24711,6 +24710,8 @@ function setup(env) {
 	function createDebug(namespace) {
 		let prevTime;
 		let enableOverride = null;
+		let namespacesCache;
+		let enabledCache;
 
 		function debug(...args) {
 			// Disabled?
@@ -24771,7 +24772,17 @@ function setup(env) {
 		Object.defineProperty(debug, 'enabled', {
 			enumerable: true,
 			configurable: false,
-			get: () => enableOverride === null ? createDebug.enabled(namespace) : enableOverride,
+			get: () => {
+				if (enableOverride !== null) {
+					return enableOverride;
+				}
+				if (namespacesCache !== createDebug.namespaces) {
+					namespacesCache = createDebug.namespaces;
+					enabledCache = createDebug.enabled(namespace);
+				}
+
+				return enabledCache;
+			},
 			set: v => {
 				enableOverride = v;
 			}
@@ -24800,6 +24811,7 @@ function setup(env) {
 	*/
 	function enable(namespaces) {
 		createDebug.save(namespaces);
+		createDebug.namespaces = namespaces;
 
 		createDebug.names = [];
 		createDebug.skips = [];
@@ -25354,6 +25366,113 @@ module.exports = function extend() {
 
 /***/ }),
 
+/***/ 9511:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/*! (c) 2020 Andrea Giammarchi */
+
+const {parse: $parse, stringify: $stringify} = JSON;
+const {keys} = Object;
+
+const Primitive = String;   // it could be Number
+const primitive = 'string'; // it could be 'number'
+
+const ignore = {};
+const object = 'object';
+
+const noop = (_, value) => value;
+
+const primitives = value => (
+  value instanceof Primitive ? Primitive(value) : value
+);
+
+const Primitives = (_, value) => (
+  typeof value === primitive ? new Primitive(value) : value
+);
+
+const revive = (input, parsed, output, $) => {
+  const lazy = [];
+  for (let ke = keys(output), {length} = ke, y = 0; y < length; y++) {
+    const k = ke[y];
+    const value = output[k];
+    if (value instanceof Primitive) {
+      const tmp = input[value];
+      if (typeof tmp === object && !parsed.has(tmp)) {
+        parsed.add(tmp);
+        output[k] = ignore;
+        lazy.push({k, a: [input, parsed, tmp, $]});
+      }
+      else
+        output[k] = $.call(output, k, tmp);
+    }
+    else if (output[k] !== ignore)
+      output[k] = $.call(output, k, value);
+  }
+  for (let {length} = lazy, i = 0; i < length; i++) {
+    const {k, a} = lazy[i];
+    output[k] = $.call(output, k, revive.apply(null, a));
+  }
+  return output;
+};
+
+const set = (known, input, value) => {
+  const index = Primitive(input.push(value) - 1);
+  known.set(value, index);
+  return index;
+};
+
+const parse = (text, reviver) => {
+  const input = $parse(text, Primitives).map(primitives);
+  const value = input[0];
+  const $ = reviver || noop;
+  const tmp = typeof value === object && value ?
+              revive(input, new Set, value, $) :
+              value;
+  return $.call({'': tmp}, '', tmp);
+};
+exports.parse = parse;
+
+const stringify = (value, replacer, space) => {
+  const $ = replacer && typeof replacer === object ?
+            (k, v) => (k === '' || -1 < replacer.indexOf(k) ? v : void 0) :
+            (replacer || noop);
+  const known = new Map;
+  const input = [];
+  const output = [];
+  let i = +set(known, input, $.call({'': value}, '', value));
+  let firstRun = !i;
+  while (i < input.length) {
+    firstRun = true;
+    output[i] = $stringify(input[i++], replace, space);
+  }
+  return '[' + output.join(',') + ']';
+  function replace(key, value) {
+    if (firstRun) {
+      firstRun = !firstRun;
+      return value;
+    }
+    const after = $.call(this, key, value);
+    switch (typeof after) {
+      case object:
+        if (after === null) return after;
+      case primitive:
+        return known.get(after) || set(known, input, after);
+    }
+    return after;
+  }
+};
+exports.stringify = stringify;
+
+const toJSON = any => $parse(stringify(any));
+exports.toJSON = toJSON;
+const fromJSON = any => parse($stringify(any));
+exports.fromJSON = fromJSON;
+
+
+/***/ }),
+
 /***/ 1133:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -25365,7 +25484,8 @@ module.exports = function () {
       /* eslint global-require: off */
       debug = __nccwpck_require__(8237)("follow-redirects");
     }
-    catch (error) {
+    catch (error) { /* */ }
+    if (typeof debug !== "function") {
       debug = function () { /* */ };
     }
   }
@@ -25398,7 +25518,7 @@ events.forEach(function (event) {
 // Error types with codes
 var RedirectionError = createErrorType(
   "ERR_FR_REDIRECTION_FAILURE",
-  ""
+  "Redirected request failed"
 );
 var TooManyRedirectsError = createErrorType(
   "ERR_FR_TOO_MANY_REDIRECTS",
@@ -25527,10 +25647,8 @@ RedirectableRequest.prototype.removeHeader = function (name) {
 // Global timeout for all underlying requests
 RedirectableRequest.prototype.setTimeout = function (msecs, callback) {
   var self = this;
-  if (callback) {
-    this.on("timeout", callback);
-  }
 
+  // Destroys the socket on timeout
   function destroyOnTimeout(socket) {
     socket.setTimeout(msecs);
     socket.removeListener("timeout", socket.destroy);
@@ -25549,18 +25667,32 @@ RedirectableRequest.prototype.setTimeout = function (msecs, callback) {
     destroyOnTimeout(socket);
   }
 
-  // Prevent a timeout from triggering
+  // Stops a timeout from triggering
   function clearTimer() {
-    clearTimeout(this._timeout);
+    // Clear the timeout
+    if (self._timeout) {
+      clearTimeout(self._timeout);
+      self._timeout = null;
+    }
+
+    // Clean up all attached listeners
+    self.removeListener("abort", clearTimer);
+    self.removeListener("error", clearTimer);
+    self.removeListener("response", clearTimer);
     if (callback) {
       self.removeListener("timeout", callback);
     }
-    if (!this.socket) {
+    if (!self.socket) {
       self._currentRequest.removeListener("socket", startTimer);
     }
   }
 
-  // Start the timer when the socket is opened
+  // Attach callback if passed
+  if (callback) {
+    this.on("timeout", callback);
+  }
+
+  // Start the timer if or when the socket is opened
   if (this.socket) {
     startTimer(this.socket);
   }
@@ -25568,9 +25700,11 @@ RedirectableRequest.prototype.setTimeout = function (msecs, callback) {
     this._currentRequest.once("socket", startTimer);
   }
 
+  // Clean up on events
   this.on("socket", destroyOnTimeout);
-  this.once("response", clearTimer);
-  this.once("error", clearTimer);
+  this.on("abort", clearTimer);
+  this.on("error", clearTimer);
+  this.on("response", clearTimer);
 
   return this;
 };
@@ -25702,84 +25836,101 @@ RedirectableRequest.prototype._processResponse = function (response) {
   // the user agent MAY automatically redirect its request to the URI
   // referenced by the Location field value,
   // even if the specific status code is not understood.
+
+  // If the response is not a redirect; return it as-is
   var location = response.headers.location;
-  if (location && this._options.followRedirects !== false &&
-      statusCode >= 300 && statusCode < 400) {
-    // Abort the current request
-    abortRequest(this._currentRequest);
-    // Discard the remainder of the response to avoid waiting for data
-    response.destroy();
-
-    // RFC7231§6.4: A client SHOULD detect and intervene
-    // in cyclical redirections (i.e., "infinite" redirection loops).
-    if (++this._redirectCount > this._options.maxRedirects) {
-      this.emit("error", new TooManyRedirectsError());
-      return;
-    }
-
-    // RFC7231§6.4: Automatic redirection needs to done with
-    // care for methods not known to be safe, […]
-    // RFC7231§6.4.2–3: For historical reasons, a user agent MAY change
-    // the request method from POST to GET for the subsequent request.
-    if ((statusCode === 301 || statusCode === 302) && this._options.method === "POST" ||
-        // RFC7231§6.4.4: The 303 (See Other) status code indicates that
-        // the server is redirecting the user agent to a different resource […]
-        // A user agent can perform a retrieval request targeting that URI
-        // (a GET or HEAD request if using HTTP) […]
-        (statusCode === 303) && !/^(?:GET|HEAD)$/.test(this._options.method)) {
-      this._options.method = "GET";
-      // Drop a possible entity and headers related to it
-      this._requestBodyBuffers = [];
-      removeMatchingHeaders(/^content-/i, this._options.headers);
-    }
-
-    // Drop the Host header, as the redirect might lead to a different host
-    var previousHostName = removeMatchingHeaders(/^host$/i, this._options.headers) ||
-      url.parse(this._currentUrl).hostname;
-
-    // Create the redirected request
-    var redirectUrl = url.resolve(this._currentUrl, location);
-    debug("redirecting to", redirectUrl);
-    this._isRedirect = true;
-    var redirectUrlParts = url.parse(redirectUrl);
-    Object.assign(this._options, redirectUrlParts);
-
-    // Drop the Authorization header if redirecting to another host
-    if (redirectUrlParts.hostname !== previousHostName) {
-      removeMatchingHeaders(/^authorization$/i, this._options.headers);
-    }
-
-    // Evaluate the beforeRedirect callback
-    if (typeof this._options.beforeRedirect === "function") {
-      var responseDetails = { headers: response.headers };
-      try {
-        this._options.beforeRedirect.call(null, this._options, responseDetails);
-      }
-      catch (err) {
-        this.emit("error", err);
-        return;
-      }
-      this._sanitizeOptions(this._options);
-    }
-
-    // Perform the redirected request
-    try {
-      this._performRequest();
-    }
-    catch (cause) {
-      var error = new RedirectionError("Redirected request failed: " + cause.message);
-      error.cause = cause;
-      this.emit("error", error);
-    }
-  }
-  else {
-    // The response is not a redirect; return it as-is
+  if (!location || this._options.followRedirects === false ||
+      statusCode < 300 || statusCode >= 400) {
     response.responseUrl = this._currentUrl;
     response.redirects = this._redirects;
     this.emit("response", response);
 
     // Clean up
     this._requestBodyBuffers = [];
+    return;
+  }
+
+  // The response is a redirect, so abort the current request
+  abortRequest(this._currentRequest);
+  // Discard the remainder of the response to avoid waiting for data
+  response.destroy();
+
+  // RFC7231§6.4: A client SHOULD detect and intervene
+  // in cyclical redirections (i.e., "infinite" redirection loops).
+  if (++this._redirectCount > this._options.maxRedirects) {
+    this.emit("error", new TooManyRedirectsError());
+    return;
+  }
+
+  // RFC7231§6.4: Automatic redirection needs to done with
+  // care for methods not known to be safe, […]
+  // RFC7231§6.4.2–3: For historical reasons, a user agent MAY change
+  // the request method from POST to GET for the subsequent request.
+  if ((statusCode === 301 || statusCode === 302) && this._options.method === "POST" ||
+      // RFC7231§6.4.4: The 303 (See Other) status code indicates that
+      // the server is redirecting the user agent to a different resource […]
+      // A user agent can perform a retrieval request targeting that URI
+      // (a GET or HEAD request if using HTTP) […]
+      (statusCode === 303) && !/^(?:GET|HEAD)$/.test(this._options.method)) {
+    this._options.method = "GET";
+    // Drop a possible entity and headers related to it
+    this._requestBodyBuffers = [];
+    removeMatchingHeaders(/^content-/i, this._options.headers);
+  }
+
+  // Drop the Host header, as the redirect might lead to a different host
+  var currentHostHeader = removeMatchingHeaders(/^host$/i, this._options.headers);
+
+  // If the redirect is relative, carry over the host of the last request
+  var currentUrlParts = url.parse(this._currentUrl);
+  var currentHost = currentHostHeader || currentUrlParts.host;
+  var currentUrl = /^\w+:/.test(location) ? this._currentUrl :
+    url.format(Object.assign(currentUrlParts, { host: currentHost }));
+
+  // Determine the URL of the redirection
+  var redirectUrl;
+  try {
+    redirectUrl = url.resolve(currentUrl, location);
+  }
+  catch (cause) {
+    this.emit("error", new RedirectionError(cause));
+    return;
+  }
+
+  // Create the redirected request
+  debug("redirecting to", redirectUrl);
+  this._isRedirect = true;
+  var redirectUrlParts = url.parse(redirectUrl);
+  Object.assign(this._options, redirectUrlParts);
+
+  // Drop confidential headers when redirecting to a less secure protocol
+  // or to a different domain that is not a superdomain
+  if (redirectUrlParts.protocol !== currentUrlParts.protocol &&
+     redirectUrlParts.protocol !== "https:" ||
+     redirectUrlParts.host !== currentHost &&
+     !isSubdomain(redirectUrlParts.host, currentHost)) {
+    removeMatchingHeaders(/^(?:authorization|cookie)$/i, this._options.headers);
+  }
+
+  // Evaluate the beforeRedirect callback
+  if (typeof this._options.beforeRedirect === "function") {
+    var responseDetails = { headers: response.headers };
+    try {
+      this._options.beforeRedirect.call(null, this._options, responseDetails);
+    }
+    catch (err) {
+      this.emit("error", err);
+      return;
+    }
+    this._sanitizeOptions(this._options);
+  }
+
+  // Perform the redirected request
+  try {
+    this._performRequest();
+  }
+  catch (cause) {
+    this.emit("error", new RedirectionError(cause));
   }
 };
 
@@ -25883,13 +26034,20 @@ function removeMatchingHeaders(regex, headers) {
       delete headers[header];
     }
   }
-  return lastValue;
+  return (lastValue === null || typeof lastValue === "undefined") ?
+    undefined : String(lastValue).trim();
 }
 
 function createErrorType(code, defaultMessage) {
-  function CustomError(message) {
+  function CustomError(cause) {
     Error.captureStackTrace(this, this.constructor);
-    this.message = message || defaultMessage;
+    if (!cause) {
+      this.message = defaultMessage;
+    }
+    else {
+      this.message = defaultMessage + ": " + cause.message;
+      this.cause = cause;
+    }
   }
   CustomError.prototype = new Error();
   CustomError.prototype.constructor = CustomError;
@@ -25906,6 +26064,11 @@ function abortRequest(request) {
   request.abort();
 }
 
+function isSubdomain(subdomain, domain) {
+  const dot = subdomain.length - domain.length - 1;
+  return dot > 0 && subdomain[dot] === "." && subdomain.endsWith(domain);
+}
+
 // Exports
 module.exports = wrap({ http: http, https: https });
 module.exports.wrap = wrap;
@@ -25913,7 +26076,7 @@ module.exports.wrap = wrap;
 
 /***/ }),
 
-/***/ 3338:
+/***/ 9618:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -25921,8 +26084,8 @@ module.exports.wrap = wrap;
 
 const fs = __nccwpck_require__(7758)
 const path = __nccwpck_require__(5622)
-const mkdirpSync = __nccwpck_require__(2915).mkdirsSync
-const utimesSync = __nccwpck_require__(2548).utimesMillisSync
+const mkdirsSync = __nccwpck_require__(2915).mkdirsSync
+const utimesMillisSync = __nccwpck_require__(2548).utimesMillisSync
 const stat = __nccwpck_require__(3901)
 
 function copySync (src, dest, opts) {
@@ -25940,7 +26103,7 @@ function copySync (src, dest, opts) {
     see https://github.com/jprichardson/node-fs-extra/issues/269`)
   }
 
-  const { srcStat, destStat } = stat.checkPathsSync(src, dest, 'copy')
+  const { srcStat, destStat } = stat.checkPathsSync(src, dest, 'copy', opts)
   stat.checkParentPathsSync(src, srcStat, dest, 'copy')
   return handleFilterAndCopy(destStat, src, dest, opts)
 }
@@ -25948,8 +26111,8 @@ function copySync (src, dest, opts) {
 function handleFilterAndCopy (destStat, src, dest, opts) {
   if (opts.filter && !opts.filter(src, dest)) return
   const destParent = path.dirname(dest)
-  if (!fs.existsSync(destParent)) mkdirpSync(destParent)
-  return startCopy(destStat, src, dest, opts)
+  if (!fs.existsSync(destParent)) mkdirsSync(destParent)
+  return getStats(destStat, src, dest, opts)
 }
 
 function startCopy (destStat, src, dest, opts) {
@@ -25966,6 +26129,9 @@ function getStats (destStat, src, dest, opts) {
            srcStat.isCharacterDevice() ||
            srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts)
   else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts)
+  else if (srcStat.isSocket()) throw new Error(`Cannot copy a socket file: ${src}`)
+  else if (srcStat.isFIFO()) throw new Error(`Cannot copy a FIFO pipe: ${src}`)
+  throw new Error(`Unknown file: ${src}`)
 }
 
 function onFile (srcStat, destStat, src, dest, opts) {
@@ -25983,49 +26149,48 @@ function mayCopyFile (srcStat, src, dest, opts) {
 }
 
 function copyFile (srcStat, src, dest, opts) {
-  if (typeof fs.copyFileSync === 'function') {
-    fs.copyFileSync(src, dest)
-    fs.chmodSync(dest, srcStat.mode)
-    if (opts.preserveTimestamps) {
-      return utimesSync(dest, srcStat.atime, srcStat.mtime)
-    }
-    return
-  }
-  return copyFileFallback(srcStat, src, dest, opts)
+  fs.copyFileSync(src, dest)
+  if (opts.preserveTimestamps) handleTimestamps(srcStat.mode, src, dest)
+  return setDestMode(dest, srcStat.mode)
 }
 
-function copyFileFallback (srcStat, src, dest, opts) {
-  const BUF_LENGTH = 64 * 1024
-  const _buff = __nccwpck_require__(7696)(BUF_LENGTH)
+function handleTimestamps (srcMode, src, dest) {
+  // Make sure the file is writable before setting the timestamp
+  // otherwise open fails with EPERM when invoked with 'r+'
+  // (through utimes call)
+  if (fileIsNotWritable(srcMode)) makeFileWritable(dest, srcMode)
+  return setDestTimestamps(src, dest)
+}
 
-  const fdr = fs.openSync(src, 'r')
-  const fdw = fs.openSync(dest, 'w', srcStat.mode)
-  let pos = 0
+function fileIsNotWritable (srcMode) {
+  return (srcMode & 0o200) === 0
+}
 
-  while (pos < srcStat.size) {
-    const bytesRead = fs.readSync(fdr, _buff, 0, BUF_LENGTH, pos)
-    fs.writeSync(fdw, _buff, 0, bytesRead)
-    pos += bytesRead
-  }
+function makeFileWritable (dest, srcMode) {
+  return setDestMode(dest, srcMode | 0o200)
+}
 
-  if (opts.preserveTimestamps) fs.futimesSync(fdw, srcStat.atime, srcStat.mtime)
+function setDestMode (dest, srcMode) {
+  return fs.chmodSync(dest, srcMode)
+}
 
-  fs.closeSync(fdr)
-  fs.closeSync(fdw)
+function setDestTimestamps (src, dest) {
+  // The initial srcStat.atime cannot be trusted
+  // because it is modified by the read(2) system call
+  // (See https://nodejs.org/api/fs.html#fs_stat_time_values)
+  const updatedSrcStat = fs.statSync(src)
+  return utimesMillisSync(dest, updatedSrcStat.atime, updatedSrcStat.mtime)
 }
 
 function onDir (srcStat, destStat, src, dest, opts) {
-  if (!destStat) return mkDirAndCopy(srcStat, src, dest, opts)
-  if (destStat && !destStat.isDirectory()) {
-    throw new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`)
-  }
+  if (!destStat) return mkDirAndCopy(srcStat.mode, src, dest, opts)
   return copyDir(src, dest, opts)
 }
 
-function mkDirAndCopy (srcStat, src, dest, opts) {
+function mkDirAndCopy (srcMode, src, dest, opts) {
   fs.mkdirSync(dest)
   copyDir(src, dest, opts)
-  return fs.chmodSync(dest, srcStat.mode)
+  return setDestMode(dest, srcMode)
 }
 
 function copyDir (src, dest, opts) {
@@ -26035,7 +26200,7 @@ function copyDir (src, dest, opts) {
 function copyDirItem (item, src, dest, opts) {
   const srcItem = path.join(src, item)
   const destItem = path.join(dest, item)
-  const { destStat } = stat.checkPathsSync(srcItem, destItem, 'copy')
+  const { destStat } = stat.checkPathsSync(srcItem, destItem, 'copy', opts)
   return startCopy(destStat, srcItem, destItem, opts)
 }
 
@@ -26085,19 +26250,6 @@ module.exports = copySync
 
 /***/ }),
 
-/***/ 1135:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-module.exports = {
-  copySync: __nccwpck_require__(3338)
-}
-
-
-/***/ }),
-
 /***/ 8834:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -26106,9 +26258,9 @@ module.exports = {
 
 const fs = __nccwpck_require__(7758)
 const path = __nccwpck_require__(5622)
-const mkdirp = __nccwpck_require__(2915).mkdirs
+const mkdirs = __nccwpck_require__(2915).mkdirs
 const pathExists = __nccwpck_require__(3835).pathExists
-const utimes = __nccwpck_require__(2548).utimesMillis
+const utimesMillis = __nccwpck_require__(2548).utimesMillis
 const stat = __nccwpck_require__(3901)
 
 function copy (src, dest, opts, cb) {
@@ -26131,7 +26283,7 @@ function copy (src, dest, opts, cb) {
     see https://github.com/jprichardson/node-fs-extra/issues/269`)
   }
 
-  stat.checkPaths(src, dest, 'copy', (err, stats) => {
+  stat.checkPaths(src, dest, 'copy', opts, (err, stats) => {
     if (err) return cb(err)
     const { srcStat, destStat } = stats
     stat.checkParentPaths(src, srcStat, dest, 'copy', err => {
@@ -26146,10 +26298,10 @@ function checkParentDir (destStat, src, dest, opts, cb) {
   const destParent = path.dirname(dest)
   pathExists(destParent, (err, dirExists) => {
     if (err) return cb(err)
-    if (dirExists) return startCopy(destStat, src, dest, opts, cb)
-    mkdirp(destParent, err => {
+    if (dirExists) return getStats(destStat, src, dest, opts, cb)
+    mkdirs(destParent, err => {
       if (err) return cb(err)
-      return startCopy(destStat, src, dest, opts, cb)
+      return getStats(destStat, src, dest, opts, cb)
     })
   })
 }
@@ -26176,6 +26328,9 @@ function getStats (destStat, src, dest, opts, cb) {
              srcStat.isCharacterDevice() ||
              srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts, cb)
     else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts, cb)
+    else if (srcStat.isSocket()) return cb(new Error(`Cannot copy a socket file: ${src}`))
+    else if (srcStat.isFIFO()) return cb(new Error(`Cannot copy a FIFO pipe: ${src}`))
+    return cb(new Error(`Unknown file: ${src}`))
   })
 }
 
@@ -26196,49 +26351,66 @@ function mayCopyFile (srcStat, src, dest, opts, cb) {
 }
 
 function copyFile (srcStat, src, dest, opts, cb) {
-  if (typeof fs.copyFile === 'function') {
-    return fs.copyFile(src, dest, err => {
-      if (err) return cb(err)
-      return setDestModeAndTimestamps(srcStat, dest, opts, cb)
-    })
-  }
-  return copyFileFallback(srcStat, src, dest, opts, cb)
-}
-
-function copyFileFallback (srcStat, src, dest, opts, cb) {
-  const rs = fs.createReadStream(src)
-  rs.on('error', err => cb(err)).once('open', () => {
-    const ws = fs.createWriteStream(dest, { mode: srcStat.mode })
-    ws.on('error', err => cb(err))
-      .on('open', () => rs.pipe(ws))
-      .once('close', () => setDestModeAndTimestamps(srcStat, dest, opts, cb))
+  fs.copyFile(src, dest, err => {
+    if (err) return cb(err)
+    if (opts.preserveTimestamps) return handleTimestampsAndMode(srcStat.mode, src, dest, cb)
+    return setDestMode(dest, srcStat.mode, cb)
   })
 }
 
-function setDestModeAndTimestamps (srcStat, dest, opts, cb) {
-  fs.chmod(dest, srcStat.mode, err => {
+function handleTimestampsAndMode (srcMode, src, dest, cb) {
+  // Make sure the file is writable before setting the timestamp
+  // otherwise open fails with EPERM when invoked with 'r+'
+  // (through utimes call)
+  if (fileIsNotWritable(srcMode)) {
+    return makeFileWritable(dest, srcMode, err => {
+      if (err) return cb(err)
+      return setDestTimestampsAndMode(srcMode, src, dest, cb)
+    })
+  }
+  return setDestTimestampsAndMode(srcMode, src, dest, cb)
+}
+
+function fileIsNotWritable (srcMode) {
+  return (srcMode & 0o200) === 0
+}
+
+function makeFileWritable (dest, srcMode, cb) {
+  return setDestMode(dest, srcMode | 0o200, cb)
+}
+
+function setDestTimestampsAndMode (srcMode, src, dest, cb) {
+  setDestTimestamps(src, dest, err => {
     if (err) return cb(err)
-    if (opts.preserveTimestamps) {
-      return utimes(dest, srcStat.atime, srcStat.mtime, cb)
-    }
-    return cb()
+    return setDestMode(dest, srcMode, cb)
+  })
+}
+
+function setDestMode (dest, srcMode, cb) {
+  return fs.chmod(dest, srcMode, cb)
+}
+
+function setDestTimestamps (src, dest, cb) {
+  // The initial srcStat.atime cannot be trusted
+  // because it is modified by the read(2) system call
+  // (See https://nodejs.org/api/fs.html#fs_stat_time_values)
+  fs.stat(src, (err, updatedSrcStat) => {
+    if (err) return cb(err)
+    return utimesMillis(dest, updatedSrcStat.atime, updatedSrcStat.mtime, cb)
   })
 }
 
 function onDir (srcStat, destStat, src, dest, opts, cb) {
-  if (!destStat) return mkDirAndCopy(srcStat, src, dest, opts, cb)
-  if (destStat && !destStat.isDirectory()) {
-    return cb(new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`))
-  }
+  if (!destStat) return mkDirAndCopy(srcStat.mode, src, dest, opts, cb)
   return copyDir(src, dest, opts, cb)
 }
 
-function mkDirAndCopy (srcStat, src, dest, opts, cb) {
+function mkDirAndCopy (srcMode, src, dest, opts, cb) {
   fs.mkdir(dest, err => {
     if (err) return cb(err)
     copyDir(src, dest, opts, err => {
       if (err) return cb(err)
-      return fs.chmod(dest, srcStat.mode, cb)
+      return setDestMode(dest, srcMode, cb)
     })
   })
 }
@@ -26259,7 +26431,7 @@ function copyDirItems (items, src, dest, opts, cb) {
 function copyDirItem (items, item, src, dest, opts, cb) {
   const srcItem = path.join(src, item)
   const destItem = path.join(dest, item)
-  stat.checkPaths(srcItem, destItem, 'copy', (err, stats) => {
+  stat.checkPaths(srcItem, destItem, 'copy', opts, (err, stats) => {
     if (err) return cb(err)
     const { destStat } = stats
     startCopy(destStat, srcItem, destItem, opts, err => {
@@ -26324,9 +26496,10 @@ module.exports = copy
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 module.exports = {
-  copy: u(__nccwpck_require__(8834))
+  copy: u(__nccwpck_require__(8834)),
+  copySync: __nccwpck_require__(9618)
 }
 
 
@@ -26338,37 +26511,28 @@ module.exports = {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
-const fs = __nccwpck_require__(7758)
+const u = __nccwpck_require__(9046).fromPromise
+const fs = __nccwpck_require__(1176)
 const path = __nccwpck_require__(5622)
 const mkdir = __nccwpck_require__(2915)
 const remove = __nccwpck_require__(7357)
 
-const emptyDir = u(function emptyDir (dir, callback) {
-  callback = callback || function () {}
-  fs.readdir(dir, (err, items) => {
-    if (err) return mkdir.mkdirs(dir, callback)
+const emptyDir = u(async function emptyDir (dir) {
+  let items
+  try {
+    items = await fs.readdir(dir)
+  } catch {
+    return mkdir.mkdirs(dir)
+  }
 
-    items = items.map(item => path.join(dir, item))
-
-    deleteItem()
-
-    function deleteItem () {
-      const item = items.pop()
-      if (!item) return callback()
-      remove.remove(item, err => {
-        if (err) return callback(err)
-        deleteItem()
-      })
-    }
-  })
+  return Promise.all(items.map(item => remove.remove(path.join(dir, item))))
 })
 
 function emptyDirSync (dir) {
   let items
   try {
     items = fs.readdirSync(dir)
-  } catch (err) {
+  } catch {
     return mkdir.mkdirsSync(dir)
   }
 
@@ -26394,11 +26558,10 @@ module.exports = {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 const path = __nccwpck_require__(5622)
 const fs = __nccwpck_require__(7758)
 const mkdir = __nccwpck_require__(2915)
-const pathExists = __nccwpck_require__(3835).pathExists
 
 function createFile (file, callback) {
   function makeFile () {
@@ -26411,13 +26574,26 @@ function createFile (file, callback) {
   fs.stat(file, (err, stats) => { // eslint-disable-line handle-callback-err
     if (!err && stats.isFile()) return callback()
     const dir = path.dirname(file)
-    pathExists(dir, (err, dirExists) => {
-      if (err) return callback(err)
-      if (dirExists) return makeFile()
-      mkdir.mkdirs(dir, err => {
-        if (err) return callback(err)
-        makeFile()
-      })
+    fs.stat(dir, (err, stats) => {
+      if (err) {
+        // if the directory doesn't exist, make it
+        if (err.code === 'ENOENT') {
+          return mkdir.mkdirs(dir, err => {
+            if (err) return callback(err)
+            makeFile()
+          })
+        }
+        return callback(err)
+      }
+
+      if (stats.isDirectory()) makeFile()
+      else {
+        // parent is not a directory
+        // This is just to cause an internal ENOTDIR error to be thrown
+        fs.readdir(dir, err => {
+          if (err) return callback(err)
+        })
+      }
     })
   })
 }
@@ -26426,12 +26602,20 @@ function createFileSync (file) {
   let stats
   try {
     stats = fs.statSync(file)
-  } catch (e) {}
+  } catch {}
   if (stats && stats.isFile()) return
 
   const dir = path.dirname(file)
-  if (!fs.existsSync(dir)) {
-    mkdir.mkdirsSync(dir)
+  try {
+    if (!fs.statSync(dir).isDirectory()) {
+      // parent is not a directory
+      // This is just to cause an internal ENOTDIR error to be thrown
+      fs.readdirSync(dir)
+    }
+  } catch (err) {
+    // If the stat call above failed because the directory doesn't exist, create it
+    if (err && err.code === 'ENOENT') mkdir.mkdirsSync(dir)
+    else throw err
   }
 
   fs.writeFileSync(file, '')
@@ -26451,26 +26635,26 @@ module.exports = {
 "use strict";
 
 
-const file = __nccwpck_require__(2164)
-const link = __nccwpck_require__(3797)
-const symlink = __nccwpck_require__(2549)
+const { createFile, createFileSync } = __nccwpck_require__(2164)
+const { createLink, createLinkSync } = __nccwpck_require__(3797)
+const { createSymlink, createSymlinkSync } = __nccwpck_require__(2549)
 
 module.exports = {
   // file
-  createFile: file.createFile,
-  createFileSync: file.createFileSync,
-  ensureFile: file.createFile,
-  ensureFileSync: file.createFileSync,
+  createFile,
+  createFileSync,
+  ensureFile: createFile,
+  ensureFileSync: createFileSync,
   // link
-  createLink: link.createLink,
-  createLinkSync: link.createLinkSync,
-  ensureLink: link.createLink,
-  ensureLinkSync: link.createLinkSync,
+  createLink,
+  createLinkSync,
+  ensureLink: createLink,
+  ensureLinkSync: createLinkSync,
   // symlink
-  createSymlink: symlink.createSymlink,
-  createSymlinkSync: symlink.createSymlinkSync,
-  ensureSymlink: symlink.createSymlink,
-  ensureSymlinkSync: symlink.createSymlinkSync
+  createSymlink,
+  createSymlinkSync,
+  ensureSymlink: createSymlink,
+  ensureSymlinkSync: createSymlinkSync
 }
 
 
@@ -26482,11 +26666,12 @@ module.exports = {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 const path = __nccwpck_require__(5622)
 const fs = __nccwpck_require__(7758)
 const mkdir = __nccwpck_require__(2915)
 const pathExists = __nccwpck_require__(3835).pathExists
+const { areIdentical } = __nccwpck_require__(3901)
 
 function createLink (srcpath, dstpath, callback) {
   function makeLink (srcpath, dstpath) {
@@ -26496,14 +26681,13 @@ function createLink (srcpath, dstpath, callback) {
     })
   }
 
-  pathExists(dstpath, (err, destinationExists) => {
-    if (err) return callback(err)
-    if (destinationExists) return callback(null)
-    fs.lstat(srcpath, (err) => {
+  fs.lstat(dstpath, (_, dstStat) => {
+    fs.lstat(srcpath, (err, srcStat) => {
       if (err) {
         err.message = err.message.replace('lstat', 'ensureLink')
         return callback(err)
       }
+      if (dstStat && areIdentical(srcStat, dstStat)) return callback(null)
 
       const dir = path.dirname(dstpath)
       pathExists(dir, (err, dirExists) => {
@@ -26519,11 +26703,14 @@ function createLink (srcpath, dstpath, callback) {
 }
 
 function createLinkSync (srcpath, dstpath) {
-  const destinationExists = fs.existsSync(dstpath)
-  if (destinationExists) return undefined
+  let dstStat
+  try {
+    dstStat = fs.lstatSync(dstpath)
+  } catch {}
 
   try {
-    fs.lstatSync(srcpath)
+    const srcStat = fs.lstatSync(srcpath)
+    if (dstStat && areIdentical(srcStat, dstStat)) return
   } catch (err) {
     err.message = err.message.replace('lstat', 'ensureLink')
     throw err
@@ -26585,8 +26772,8 @@ function symlinkPaths (srcpath, dstpath, callback) {
         return callback(err)
       }
       return callback(null, {
-        'toCwd': srcpath,
-        'toDst': srcpath
+        toCwd: srcpath,
+        toDst: srcpath
       })
     })
   } else {
@@ -26596,8 +26783,8 @@ function symlinkPaths (srcpath, dstpath, callback) {
       if (err) return callback(err)
       if (exists) {
         return callback(null, {
-          'toCwd': relativeToDst,
-          'toDst': srcpath
+          toCwd: relativeToDst,
+          toDst: srcpath
         })
       } else {
         return fs.lstat(srcpath, (err) => {
@@ -26606,8 +26793,8 @@ function symlinkPaths (srcpath, dstpath, callback) {
             return callback(err)
           }
           return callback(null, {
-            'toCwd': srcpath,
-            'toDst': path.relative(dstdir, srcpath)
+            toCwd: srcpath,
+            toDst: path.relative(dstdir, srcpath)
           })
         })
       }
@@ -26621,8 +26808,8 @@ function symlinkPathsSync (srcpath, dstpath) {
     exists = fs.existsSync(srcpath)
     if (!exists) throw new Error('absolute srcpath does not exist')
     return {
-      'toCwd': srcpath,
-      'toDst': srcpath
+      toCwd: srcpath,
+      toDst: srcpath
     }
   } else {
     const dstdir = path.dirname(dstpath)
@@ -26630,15 +26817,15 @@ function symlinkPathsSync (srcpath, dstpath) {
     exists = fs.existsSync(relativeToDst)
     if (exists) {
       return {
-        'toCwd': relativeToDst,
-        'toDst': srcpath
+        toCwd: relativeToDst,
+        toDst: srcpath
       }
     } else {
       exists = fs.existsSync(srcpath)
       if (!exists) throw new Error('relative srcpath does not exist')
       return {
-        'toCwd': srcpath,
-        'toDst': path.relative(dstdir, srcpath)
+        toCwd: srcpath,
+        toDst: path.relative(dstdir, srcpath)
       }
     }
   }
@@ -26677,7 +26864,7 @@ function symlinkTypeSync (srcpath, type) {
   if (type) return type
   try {
     stats = fs.lstatSync(srcpath)
-  } catch (e) {
+  } catch {
     return 'file'
   }
   return (stats && stats.isDirectory()) ? 'dir' : 'file'
@@ -26697,9 +26884,9 @@ module.exports = {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 const path = __nccwpck_require__(5622)
-const fs = __nccwpck_require__(7758)
+const fs = __nccwpck_require__(1176)
 const _mkdirs = __nccwpck_require__(2915)
 const mkdirs = _mkdirs.mkdirs
 const mkdirsSync = _mkdirs.mkdirsSync
@@ -26714,26 +26901,38 @@ const symlinkTypeSync = _symlinkType.symlinkTypeSync
 
 const pathExists = __nccwpck_require__(3835).pathExists
 
+const { areIdentical } = __nccwpck_require__(3901)
+
 function createSymlink (srcpath, dstpath, type, callback) {
   callback = (typeof type === 'function') ? type : callback
   type = (typeof type === 'function') ? false : type
 
-  pathExists(dstpath, (err, destinationExists) => {
+  fs.lstat(dstpath, (err, stats) => {
+    if (!err && stats.isSymbolicLink()) {
+      Promise.all([
+        fs.stat(srcpath),
+        fs.stat(dstpath)
+      ]).then(([srcStat, dstStat]) => {
+        if (areIdentical(srcStat, dstStat)) return callback(null)
+        _createSymlink(srcpath, dstpath, type, callback)
+      })
+    } else _createSymlink(srcpath, dstpath, type, callback)
+  })
+}
+
+function _createSymlink (srcpath, dstpath, type, callback) {
+  symlinkPaths(srcpath, dstpath, (err, relative) => {
     if (err) return callback(err)
-    if (destinationExists) return callback(null)
-    symlinkPaths(srcpath, dstpath, (err, relative) => {
+    srcpath = relative.toDst
+    symlinkType(relative.toCwd, type, (err, type) => {
       if (err) return callback(err)
-      srcpath = relative.toDst
-      symlinkType(relative.toCwd, type, (err, type) => {
+      const dir = path.dirname(dstpath)
+      pathExists(dir, (err, dirExists) => {
         if (err) return callback(err)
-        const dir = path.dirname(dstpath)
-        pathExists(dir, (err, dirExists) => {
+        if (dirExists) return fs.symlink(srcpath, dstpath, type, callback)
+        mkdirs(dir, err => {
           if (err) return callback(err)
-          if (dirExists) return fs.symlink(srcpath, dstpath, type, callback)
-          mkdirs(dir, err => {
-            if (err) return callback(err)
-            fs.symlink(srcpath, dstpath, type, callback)
-          })
+          fs.symlink(srcpath, dstpath, type, callback)
         })
       })
     })
@@ -26741,8 +26940,15 @@ function createSymlink (srcpath, dstpath, type, callback) {
 }
 
 function createSymlinkSync (srcpath, dstpath, type) {
-  const destinationExists = fs.existsSync(dstpath)
-  if (destinationExists) return undefined
+  let stats
+  try {
+    stats = fs.lstatSync(dstpath)
+  } catch {}
+  if (stats && stats.isSymbolicLink()) {
+    const srcStat = fs.statSync(srcpath)
+    const dstStat = fs.statSync(dstpath)
+    if (areIdentical(srcStat, dstStat)) return
+  }
 
   const relative = symlinkPathsSync(srcpath, dstpath)
   srcpath = relative.toDst
@@ -26769,7 +26975,7 @@ module.exports = {
 
 // This is adapted from https://github.com/normalize/mz
 // Copyright (c) 2014-2016 Jonathan Ong me@jongleberry.com and Contributors
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 const fs = __nccwpck_require__(7758)
 
 const api = [
@@ -26786,18 +26992,20 @@ const api = [
   'fsync',
   'ftruncate',
   'futimes',
-  'lchown',
   'lchmod',
+  'lchown',
   'link',
   'lstat',
   'mkdir',
   'mkdtemp',
   'open',
-  'readFile',
+  'opendir',
   'readdir',
+  'readFile',
   'readlink',
   'realpath',
   'rename',
+  'rm',
   'rmdir',
   'stat',
   'symlink',
@@ -26807,26 +27015,20 @@ const api = [
   'writeFile'
 ].filter(key => {
   // Some commands are not available on some systems. Ex:
-  // fs.copyFile was added in Node.js v8.5.0
-  // fs.mkdtemp was added in Node.js v5.10.0
+  // fs.opendir was added in Node.js v12.12.0
+  // fs.rm was added in Node.js v14.14.0
   // fs.lchown is not available on at least some Linux
   return typeof fs[key] === 'function'
 })
 
-// Export all keys:
-Object.keys(fs).forEach(key => {
-  if (key === 'promises') {
-    // fs.promises is a getter property that triggers ExperimentalWarning
-    // Don't re-export it here, the getter is defined in "lib/index.js"
-    return
-  }
-  exports[key] = fs[key]
-})
+// Export cloned fs:
+Object.assign(exports, fs)
 
 // Universalify async methods:
 api.forEach(method => {
   exports[method] = u(fs[method])
 })
+exports.realpath.native = u(fs.realpath.native)
 
 // We differ from mz/fs in that we still ship the old, broken, fs.exists()
 // since we are a drop-in replacement for the native module
@@ -26839,7 +27041,7 @@ exports.exists = function (filename, callback) {
   })
 }
 
-// fs.read() & fs.write need special treatment due to multiple callback args
+// fs.read(), fs.write(), & fs.writev() need special treatment due to multiple callback args
 
 exports.read = function (fd, buffer, offset, length, position, callback) {
   if (typeof callback === 'function') {
@@ -26871,9 +27073,23 @@ exports.write = function (fd, buffer, ...args) {
   })
 }
 
-// fs.realpath.native only available in Node v9.2+
-if (typeof fs.realpath.native === 'function') {
-  exports.realpath.native = u(fs.realpath.native)
+// fs.writev only available in Node v12.9.0+
+if (typeof fs.writev === 'function') {
+  // Function signature is
+  // s.writev(fd, buffers[, position], callback)
+  // We need to handle the optional arg, so we use ...args
+  exports.writev = function (fd, buffers, ...args) {
+    if (typeof args[args.length - 1] === 'function') {
+      return fs.writev(fd, buffers, ...args)
+    }
+
+    return new Promise((resolve, reject) => {
+      fs.writev(fd, buffers, ...args, (err, bytesWritten, buffers) => {
+        if (err) return reject(err)
+        resolve({ bytesWritten, buffers })
+      })
+    })
+  }
 }
 
 
@@ -26885,31 +27101,19 @@ if (typeof fs.realpath.native === 'function') {
 "use strict";
 
 
-module.exports = Object.assign(
-  {},
+module.exports = {
   // Export promiseified graceful-fs:
-  __nccwpck_require__(1176),
+  ...__nccwpck_require__(1176),
   // Export extra methods:
-  __nccwpck_require__(1135),
-  __nccwpck_require__(1335),
-  __nccwpck_require__(6970),
-  __nccwpck_require__(55),
-  __nccwpck_require__(213),
-  __nccwpck_require__(2915),
-  __nccwpck_require__(9665),
-  __nccwpck_require__(1497),
-  __nccwpck_require__(6570),
-  __nccwpck_require__(3835),
-  __nccwpck_require__(7357)
-)
-
-// Export fs.promises as a getter property so that we don't trigger
-// ExperimentalWarning before fs.promises is actually accessed.
-const fs = __nccwpck_require__(5747)
-if (Object.getOwnPropertyDescriptor(fs, 'promises')) {
-  Object.defineProperty(module.exports, "promises", ({
-    get () { return fs.promises }
-  }))
+  ...__nccwpck_require__(1335),
+  ...__nccwpck_require__(6970),
+  ...__nccwpck_require__(55),
+  ...__nccwpck_require__(213),
+  ...__nccwpck_require__(2915),
+  ...__nccwpck_require__(1497),
+  ...__nccwpck_require__(1832),
+  ...__nccwpck_require__(3835),
+  ...__nccwpck_require__(7357)
 }
 
 
@@ -26921,7 +27125,7 @@ if (Object.getOwnPropertyDescriptor(fs, 'promises')) {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromPromise
 const jsonFile = __nccwpck_require__(8970)
 
 jsonFile.outputJson = u(__nccwpck_require__(531))
@@ -26945,14 +27149,13 @@ module.exports = jsonFile
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
 const jsonFile = __nccwpck_require__(6160)
 
 module.exports = {
   // jsonfile exports
-  readJson: u(jsonFile.readFile),
+  readJson: jsonFile.readFile,
   readJsonSync: jsonFile.readFileSync,
-  writeJson: u(jsonFile.writeFile),
+  writeJson: jsonFile.writeFile,
   writeJsonSync: jsonFile.writeFileSync
 }
 
@@ -26965,19 +27168,13 @@ module.exports = {
 "use strict";
 
 
-const fs = __nccwpck_require__(7758)
-const path = __nccwpck_require__(5622)
-const mkdir = __nccwpck_require__(2915)
-const jsonFile = __nccwpck_require__(8970)
+const { stringify } = __nccwpck_require__(5902)
+const { outputFileSync } = __nccwpck_require__(1832)
 
 function outputJsonSync (file, data, options) {
-  const dir = path.dirname(file)
+  const str = stringify(data, options)
 
-  if (!fs.existsSync(dir)) {
-    mkdir.mkdirsSync(dir)
-  }
-
-  jsonFile.writeJsonSync(file, data, options)
+  outputFileSync(file, str, options)
 }
 
 module.exports = outputJsonSync
@@ -26991,28 +27188,13 @@ module.exports = outputJsonSync
 "use strict";
 
 
-const path = __nccwpck_require__(5622)
-const mkdir = __nccwpck_require__(2915)
-const pathExists = __nccwpck_require__(3835).pathExists
-const jsonFile = __nccwpck_require__(8970)
+const { stringify } = __nccwpck_require__(5902)
+const { outputFile } = __nccwpck_require__(1832)
 
-function outputJson (file, data, options, callback) {
-  if (typeof options === 'function') {
-    callback = options
-    options = {}
-  }
+async function outputJson (file, data, options = {}) {
+  const str = stringify(data, options)
 
-  const dir = path.dirname(file)
-
-  pathExists(dir, (err, itDoes) => {
-    if (err) return callback(err)
-    if (itDoes) return jsonFile.writeJson(file, data, options, callback)
-
-    mkdir.mkdirs(dir, err => {
-      if (err) return callback(err)
-      jsonFile.writeJson(file, data, options, callback)
-    })
-  })
+  await outputFile(file, str, options)
 }
 
 module.exports = outputJson
@@ -27025,203 +27207,103 @@ module.exports = outputJson
 
 "use strict";
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
-const mkdirs = u(__nccwpck_require__(9677))
-const mkdirsSync = __nccwpck_require__(684)
+const u = __nccwpck_require__(9046).fromPromise
+const { makeDir: _makeDir, makeDirSync } = __nccwpck_require__(2751)
+const makeDir = u(_makeDir)
 
 module.exports = {
-  mkdirs,
-  mkdirsSync,
+  mkdirs: makeDir,
+  mkdirsSync: makeDirSync,
   // alias
-  mkdirp: mkdirs,
-  mkdirpSync: mkdirsSync,
-  ensureDir: mkdirs,
-  ensureDirSync: mkdirsSync
+  mkdirp: makeDir,
+  mkdirpSync: makeDirSync,
+  ensureDir: makeDir,
+  ensureDirSync: makeDirSync
 }
 
 
 /***/ }),
 
-/***/ 684:
+/***/ 2751:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
 
+const fs = __nccwpck_require__(1176)
+const { checkPath } = __nccwpck_require__(9907)
 
-const fs = __nccwpck_require__(7758)
-const path = __nccwpck_require__(5622)
-const invalidWin32Path = __nccwpck_require__(1590).invalidWin32Path
-
-const o777 = parseInt('0777', 8)
-
-function mkdirsSync (p, opts, made) {
-  if (!opts || typeof opts !== 'object') {
-    opts = { mode: opts }
-  }
-
-  let mode = opts.mode
-  const xfs = opts.fs || fs
-
-  if (process.platform === 'win32' && invalidWin32Path(p)) {
-    const errInval = new Error(p + ' contains invalid WIN32 path characters.')
-    errInval.code = 'EINVAL'
-    throw errInval
-  }
-
-  if (mode === undefined) {
-    mode = o777 & (~process.umask())
-  }
-  if (!made) made = null
-
-  p = path.resolve(p)
-
-  try {
-    xfs.mkdirSync(p, mode)
-    made = made || p
-  } catch (err0) {
-    if (err0.code === 'ENOENT') {
-      if (path.dirname(p) === p) throw err0
-      made = mkdirsSync(path.dirname(p), opts, made)
-      mkdirsSync(p, opts, made)
-    } else {
-      // In the case of any other error, just see if there's a dir there
-      // already. If so, then hooray!  If not, then something is borked.
-      let stat
-      try {
-        stat = xfs.statSync(p)
-      } catch (err1) {
-        throw err0
-      }
-      if (!stat.isDirectory()) throw err0
-    }
-  }
-
-  return made
+const getMode = options => {
+  const defaults = { mode: 0o777 }
+  if (typeof options === 'number') return options
+  return ({ ...defaults, ...options }).mode
 }
 
-module.exports = mkdirsSync
+module.exports.makeDir = async (dir, options) => {
+  checkPath(dir)
 
-
-/***/ }),
-
-/***/ 9677:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-const fs = __nccwpck_require__(7758)
-const path = __nccwpck_require__(5622)
-const invalidWin32Path = __nccwpck_require__(1590).invalidWin32Path
-
-const o777 = parseInt('0777', 8)
-
-function mkdirs (p, opts, callback, made) {
-  if (typeof opts === 'function') {
-    callback = opts
-    opts = {}
-  } else if (!opts || typeof opts !== 'object') {
-    opts = { mode: opts }
-  }
-
-  if (process.platform === 'win32' && invalidWin32Path(p)) {
-    const errInval = new Error(p + ' contains invalid WIN32 path characters.')
-    errInval.code = 'EINVAL'
-    return callback(errInval)
-  }
-
-  let mode = opts.mode
-  const xfs = opts.fs || fs
-
-  if (mode === undefined) {
-    mode = o777 & (~process.umask())
-  }
-  if (!made) made = null
-
-  callback = callback || function () {}
-  p = path.resolve(p)
-
-  xfs.mkdir(p, mode, er => {
-    if (!er) {
-      made = made || p
-      return callback(null, made)
-    }
-    switch (er.code) {
-      case 'ENOENT':
-        if (path.dirname(p) === p) return callback(er)
-        mkdirs(path.dirname(p), opts, (er, made) => {
-          if (er) callback(er, made)
-          else mkdirs(p, opts, callback, made)
-        })
-        break
-
-      // In the case of any other error, just see if there's a dir
-      // there already.  If so, then hooray!  If not, then something
-      // is borked.
-      default:
-        xfs.stat(p, (er2, stat) => {
-          // if the stat fails, then that's super weird.
-          // let the original error be the failure reason.
-          if (er2 || !stat.isDirectory()) callback(er, made)
-          else callback(null, made)
-        })
-        break
-    }
+  return fs.mkdir(dir, {
+    mode: getMode(options),
+    recursive: true
   })
 }
 
-module.exports = mkdirs
+module.exports.makeDirSync = (dir, options) => {
+  checkPath(dir)
+
+  return fs.mkdirSync(dir, {
+    mode: getMode(options),
+    recursive: true
+  })
+}
 
 
 /***/ }),
 
-/***/ 1590:
+/***/ 9907:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
-
+// Adapted from https://github.com/sindresorhus/make-dir
+// Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 const path = __nccwpck_require__(5622)
 
-// get drive on windows
-function getRootPath (p) {
-  p = path.normalize(path.resolve(p)).split(path.sep)
-  if (p.length > 0) return p[0]
-  return null
-}
+// https://github.com/nodejs/node/issues/8987
+// https://github.com/libuv/libuv/pull/1088
+module.exports.checkPath = function checkPath (pth) {
+  if (process.platform === 'win32') {
+    const pathHasInvalidWinCharacters = /[<>:"|?*]/.test(pth.replace(path.parse(pth).root, ''))
 
-// http://stackoverflow.com/a/62888/10333 contains more accurate
-// TODO: expand to include the rest
-const INVALID_PATH_CHARS = /[<>:"|?*]/
-
-function invalidWin32Path (p) {
-  const rp = getRootPath(p)
-  p = p.replace(rp, '')
-  return INVALID_PATH_CHARS.test(p)
-}
-
-module.exports = {
-  getRootPath,
-  invalidWin32Path
+    if (pathHasInvalidWinCharacters) {
+      const error = new Error(`Path contains invalid characters: ${pth}`)
+      error.code = 'EINVAL'
+      throw error
+    }
+  }
 }
 
 
 /***/ }),
 
-/***/ 9665:
+/***/ 1497:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
 
 
+const u = __nccwpck_require__(9046).fromCallback
 module.exports = {
-  moveSync: __nccwpck_require__(6445)
+  move: u(__nccwpck_require__(2231)),
+  moveSync: __nccwpck_require__(2047)
 }
 
 
 /***/ }),
 
-/***/ 6445:
+/***/ 2047:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -27229,7 +27311,7 @@ module.exports = {
 
 const fs = __nccwpck_require__(7758)
 const path = __nccwpck_require__(5622)
-const copySync = __nccwpck_require__(1135).copySync
+const copySync = __nccwpck_require__(1335).copySync
 const removeSync = __nccwpck_require__(7357).removeSync
 const mkdirpSync = __nccwpck_require__(2915).mkdirpSync
 const stat = __nccwpck_require__(3901)
@@ -27238,13 +27320,20 @@ function moveSync (src, dest, opts) {
   opts = opts || {}
   const overwrite = opts.overwrite || opts.clobber || false
 
-  const { srcStat } = stat.checkPathsSync(src, dest, 'move')
+  const { srcStat, isChangingCase = false } = stat.checkPathsSync(src, dest, 'move', opts)
   stat.checkParentPathsSync(src, srcStat, dest, 'move')
-  mkdirpSync(path.dirname(dest))
-  return doRename(src, dest, overwrite)
+  if (!isParentRoot(dest)) mkdirpSync(path.dirname(dest))
+  return doRename(src, dest, overwrite, isChangingCase)
 }
 
-function doRename (src, dest, overwrite) {
+function isParentRoot (dest) {
+  const parent = path.dirname(dest)
+  const parsedPath = path.parse(parent)
+  return parsedPath.root === parent
+}
+
+function doRename (src, dest, overwrite, isChangingCase) {
+  if (isChangingCase) return rename(src, dest, overwrite)
   if (overwrite) {
     removeSync(dest)
     return rename(src, dest, overwrite)
@@ -27276,20 +27365,6 @@ module.exports = moveSync
 
 /***/ }),
 
-/***/ 1497:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
-module.exports = {
-  move: u(__nccwpck_require__(2231))
-}
-
-
-/***/ }),
-
 /***/ 2231:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -27312,20 +27387,28 @@ function move (src, dest, opts, cb) {
 
   const overwrite = opts.overwrite || opts.clobber || false
 
-  stat.checkPaths(src, dest, 'move', (err, stats) => {
+  stat.checkPaths(src, dest, 'move', opts, (err, stats) => {
     if (err) return cb(err)
-    const { srcStat } = stats
+    const { srcStat, isChangingCase = false } = stats
     stat.checkParentPaths(src, srcStat, dest, 'move', err => {
       if (err) return cb(err)
+      if (isParentRoot(dest)) return doRename(src, dest, overwrite, isChangingCase, cb)
       mkdirp(path.dirname(dest), err => {
         if (err) return cb(err)
-        return doRename(src, dest, overwrite, cb)
+        return doRename(src, dest, overwrite, isChangingCase, cb)
       })
     })
   })
 }
 
-function doRename (src, dest, overwrite, cb) {
+function isParentRoot (dest) {
+  const parent = path.dirname(dest)
+  const parsedPath = path.parse(parent)
+  return parsedPath.root === parent
+}
+
+function doRename (src, dest, overwrite, isChangingCase, cb) {
+  if (isChangingCase) return rename(src, dest, overwrite, cb)
   if (overwrite) {
     return remove(dest, err => {
       if (err) return cb(err)
@@ -27363,13 +27446,13 @@ module.exports = move
 
 /***/ }),
 
-/***/ 6570:
+/***/ 1832:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const u = __nccwpck_require__(9046).fromCallback
 const fs = __nccwpck_require__(7758)
 const path = __nccwpck_require__(5622)
 const mkdir = __nccwpck_require__(2915)
@@ -27416,7 +27499,7 @@ module.exports = {
 
 "use strict";
 
-const u = __nccwpck_require__(9046)/* .fromPromise */ .p
+const u = __nccwpck_require__(9046).fromPromise
 const fs = __nccwpck_require__(1176)
 
 function pathExists (path) {
@@ -27437,12 +27520,25 @@ module.exports = {
 "use strict";
 
 
-const u = __nccwpck_require__(9046)/* .fromCallback */ .E
+const fs = __nccwpck_require__(7758)
+const u = __nccwpck_require__(9046).fromCallback
 const rimraf = __nccwpck_require__(7247)
 
+function remove (path, callback) {
+  // Node 14.14.0+
+  if (fs.rm) return fs.rm(path, { recursive: true, force: true }, callback)
+  rimraf(path, callback)
+}
+
+function removeSync (path) {
+  // Node 14.14.0+
+  if (fs.rmSync) return fs.rmSync(path, { recursive: true, force: true })
+  rimraf.sync(path)
+}
+
 module.exports = {
-  remove: u(rimraf),
-  removeSync: rimraf.sync
+  remove: u(remove),
+  removeSync
 }
 
 
@@ -27567,9 +27663,6 @@ function fixWinEPERM (p, options, er, cb) {
   assert(p)
   assert(options)
   assert(typeof cb === 'function')
-  if (er) {
-    assert(er instanceof Error)
-  }
 
   options.chmod(p, 0o666, er2 => {
     if (er2) {
@@ -27593,9 +27686,6 @@ function fixWinEPERMSync (p, options, er) {
 
   assert(p)
   assert(options)
-  if (er) {
-    assert(er instanceof Error)
-  }
 
   try {
     options.chmodSync(p, 0o666)
@@ -27627,9 +27717,6 @@ function fixWinEPERMSync (p, options, er) {
 function rmdir (p, options, originalEr, cb) {
   assert(p)
   assert(options)
-  if (originalEr) {
-    assert(originalEr instanceof Error)
-  }
   assert(typeof cb === 'function')
 
   // try to rmdir first, and only readdir on ENOTEMPTY or EEXIST (SunOS)
@@ -27722,9 +27809,6 @@ function rimrafSync (p, options) {
 function rmdirSync (p, options, originalEr) {
   assert(p)
   assert(options)
-  if (originalEr) {
-    assert(originalEr instanceof Error)
-  }
 
   try {
     options.rmdirSync(p)
@@ -27756,7 +27840,7 @@ function rmkidsSync (p, options) {
       try {
         const ret = options.rmdirSync(p, options)
         return ret
-      } catch (er) { }
+      } catch {}
     } while (Date.now() - startTime < 500) // give up after 500ms
   } else {
     const ret = options.rmdirSync(p, options)
@@ -27770,97 +27854,37 @@ rimraf.sync = rimrafSync
 
 /***/ }),
 
-/***/ 7696:
-/***/ ((module) => {
-
-"use strict";
-
-/* eslint-disable node/no-deprecated-api */
-module.exports = function (size) {
-  if (typeof Buffer.allocUnsafe === 'function') {
-    try {
-      return Buffer.allocUnsafe(size)
-    } catch (e) {
-      return new Buffer(size)
-    }
-  }
-  return new Buffer(size)
-}
-
-
-/***/ }),
-
 /***/ 3901:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
 
 
-const fs = __nccwpck_require__(7758)
+const fs = __nccwpck_require__(1176)
 const path = __nccwpck_require__(5622)
+const util = __nccwpck_require__(1669)
 
-const NODE_VERSION_MAJOR_WITH_BIGINT = 10
-const NODE_VERSION_MINOR_WITH_BIGINT = 5
-const NODE_VERSION_PATCH_WITH_BIGINT = 0
-const nodeVersion = process.versions.node.split('.')
-const nodeVersionMajor = Number.parseInt(nodeVersion[0], 10)
-const nodeVersionMinor = Number.parseInt(nodeVersion[1], 10)
-const nodeVersionPatch = Number.parseInt(nodeVersion[2], 10)
-
-function nodeSupportsBigInt () {
-  if (nodeVersionMajor > NODE_VERSION_MAJOR_WITH_BIGINT) {
-    return true
-  } else if (nodeVersionMajor === NODE_VERSION_MAJOR_WITH_BIGINT) {
-    if (nodeVersionMinor > NODE_VERSION_MINOR_WITH_BIGINT) {
-      return true
-    } else if (nodeVersionMinor === NODE_VERSION_MINOR_WITH_BIGINT) {
-      if (nodeVersionPatch >= NODE_VERSION_PATCH_WITH_BIGINT) {
-        return true
-      }
-    }
-  }
-  return false
+function getStats (src, dest, opts) {
+  const statFunc = opts.dereference
+    ? (file) => fs.stat(file, { bigint: true })
+    : (file) => fs.lstat(file, { bigint: true })
+  return Promise.all([
+    statFunc(src),
+    statFunc(dest).catch(err => {
+      if (err.code === 'ENOENT') return null
+      throw err
+    })
+  ]).then(([srcStat, destStat]) => ({ srcStat, destStat }))
 }
 
-function getStats (src, dest, cb) {
-  if (nodeSupportsBigInt()) {
-    fs.stat(src, { bigint: true }, (err, srcStat) => {
-      if (err) return cb(err)
-      fs.stat(dest, { bigint: true }, (err, destStat) => {
-        if (err) {
-          if (err.code === 'ENOENT') return cb(null, { srcStat, destStat: null })
-          return cb(err)
-        }
-        return cb(null, { srcStat, destStat })
-      })
-    })
-  } else {
-    fs.stat(src, (err, srcStat) => {
-      if (err) return cb(err)
-      fs.stat(dest, (err, destStat) => {
-        if (err) {
-          if (err.code === 'ENOENT') return cb(null, { srcStat, destStat: null })
-          return cb(err)
-        }
-        return cb(null, { srcStat, destStat })
-      })
-    })
-  }
-}
-
-function getStatsSync (src, dest) {
-  let srcStat, destStat
-  if (nodeSupportsBigInt()) {
-    srcStat = fs.statSync(src, { bigint: true })
-  } else {
-    srcStat = fs.statSync(src)
-  }
+function getStatsSync (src, dest, opts) {
+  let destStat
+  const statFunc = opts.dereference
+    ? (file) => fs.statSync(file, { bigint: true })
+    : (file) => fs.lstatSync(file, { bigint: true })
+  const srcStat = statFunc(src)
   try {
-    if (nodeSupportsBigInt()) {
-      destStat = fs.statSync(dest, { bigint: true })
-    } else {
-      destStat = fs.statSync(dest)
-    }
+    destStat = statFunc(dest)
   } catch (err) {
     if (err.code === 'ENOENT') return { srcStat, destStat: null }
     throw err
@@ -27868,13 +27892,30 @@ function getStatsSync (src, dest) {
   return { srcStat, destStat }
 }
 
-function checkPaths (src, dest, funcName, cb) {
-  getStats(src, dest, (err, stats) => {
+function checkPaths (src, dest, funcName, opts, cb) {
+  util.callbackify(getStats)(src, dest, opts, (err, stats) => {
     if (err) return cb(err)
     const { srcStat, destStat } = stats
-    if (destStat && destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev) {
-      return cb(new Error('Source and destination must not be the same.'))
+
+    if (destStat) {
+      if (areIdentical(srcStat, destStat)) {
+        const srcBaseName = path.basename(src)
+        const destBaseName = path.basename(dest)
+        if (funcName === 'move' &&
+          srcBaseName !== destBaseName &&
+          srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
+          return cb(null, { srcStat, destStat, isChangingCase: true })
+        }
+        return cb(new Error('Source and destination must not be the same.'))
+      }
+      if (srcStat.isDirectory() && !destStat.isDirectory()) {
+        return cb(new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`))
+      }
+      if (!srcStat.isDirectory() && destStat.isDirectory()) {
+        return cb(new Error(`Cannot overwrite directory '${dest}' with non-directory '${src}'.`))
+      }
     }
+
     if (srcStat.isDirectory() && isSrcSubdir(src, dest)) {
       return cb(new Error(errMsg(src, dest, funcName)))
     }
@@ -27882,11 +27923,28 @@ function checkPaths (src, dest, funcName, cb) {
   })
 }
 
-function checkPathsSync (src, dest, funcName) {
-  const { srcStat, destStat } = getStatsSync(src, dest)
-  if (destStat && destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev) {
-    throw new Error('Source and destination must not be the same.')
+function checkPathsSync (src, dest, funcName, opts) {
+  const { srcStat, destStat } = getStatsSync(src, dest, opts)
+
+  if (destStat) {
+    if (areIdentical(srcStat, destStat)) {
+      const srcBaseName = path.basename(src)
+      const destBaseName = path.basename(dest)
+      if (funcName === 'move' &&
+        srcBaseName !== destBaseName &&
+        srcBaseName.toLowerCase() === destBaseName.toLowerCase()) {
+        return { srcStat, destStat, isChangingCase: true }
+      }
+      throw new Error('Source and destination must not be the same.')
+    }
+    if (srcStat.isDirectory() && !destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite non-directory '${dest}' with directory '${src}'.`)
+    }
+    if (!srcStat.isDirectory() && destStat.isDirectory()) {
+      throw new Error(`Cannot overwrite directory '${dest}' with non-directory '${src}'.`)
+    }
   }
+
   if (srcStat.isDirectory() && isSrcSubdir(src, dest)) {
     throw new Error(errMsg(src, dest, funcName))
   }
@@ -27901,29 +27959,16 @@ function checkParentPaths (src, srcStat, dest, funcName, cb) {
   const srcParent = path.resolve(path.dirname(src))
   const destParent = path.resolve(path.dirname(dest))
   if (destParent === srcParent || destParent === path.parse(destParent).root) return cb()
-  if (nodeSupportsBigInt()) {
-    fs.stat(destParent, { bigint: true }, (err, destStat) => {
-      if (err) {
-        if (err.code === 'ENOENT') return cb()
-        return cb(err)
-      }
-      if (destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev) {
-        return cb(new Error(errMsg(src, dest, funcName)))
-      }
-      return checkParentPaths(src, srcStat, destParent, funcName, cb)
-    })
-  } else {
-    fs.stat(destParent, (err, destStat) => {
-      if (err) {
-        if (err.code === 'ENOENT') return cb()
-        return cb(err)
-      }
-      if (destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev) {
-        return cb(new Error(errMsg(src, dest, funcName)))
-      }
-      return checkParentPaths(src, srcStat, destParent, funcName, cb)
-    })
-  }
+  fs.stat(destParent, { bigint: true }, (err, destStat) => {
+    if (err) {
+      if (err.code === 'ENOENT') return cb()
+      return cb(err)
+    }
+    if (areIdentical(srcStat, destStat)) {
+      return cb(new Error(errMsg(src, dest, funcName)))
+    }
+    return checkParentPaths(src, srcStat, destParent, funcName, cb)
+  })
 }
 
 function checkParentPathsSync (src, srcStat, dest, funcName) {
@@ -27932,19 +27977,19 @@ function checkParentPathsSync (src, srcStat, dest, funcName) {
   if (destParent === srcParent || destParent === path.parse(destParent).root) return
   let destStat
   try {
-    if (nodeSupportsBigInt()) {
-      destStat = fs.statSync(destParent, { bigint: true })
-    } else {
-      destStat = fs.statSync(destParent)
-    }
+    destStat = fs.statSync(destParent, { bigint: true })
   } catch (err) {
     if (err.code === 'ENOENT') return
     throw err
   }
-  if (destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev) {
+  if (areIdentical(srcStat, destStat)) {
     throw new Error(errMsg(src, dest, funcName))
   }
   return checkParentPathsSync(src, srcStat, destParent, funcName)
+}
+
+function areIdentical (srcStat, destStat) {
+  return destStat.ino && destStat.dev && destStat.ino === srcStat.ino && destStat.dev === srcStat.dev
 }
 
 // return true if dest is a subdir of src, otherwise false.
@@ -27964,7 +28009,8 @@ module.exports = {
   checkPathsSync,
   checkParentPaths,
   checkParentPathsSync,
-  isSrcSubdir
+  isSrcSubdir,
+  areIdentical
 }
 
 
@@ -27977,56 +28023,6 @@ module.exports = {
 
 
 const fs = __nccwpck_require__(7758)
-const os = __nccwpck_require__(2087)
-const path = __nccwpck_require__(5622)
-
-// HFS, ext{2,3}, FAT do not, Node.js v0.10 does not
-function hasMillisResSync () {
-  let tmpfile = path.join('millis-test-sync' + Date.now().toString() + Math.random().toString().slice(2))
-  tmpfile = path.join(os.tmpdir(), tmpfile)
-
-  // 550 millis past UNIX epoch
-  const d = new Date(1435410243862)
-  fs.writeFileSync(tmpfile, 'https://github.com/jprichardson/node-fs-extra/pull/141')
-  const fd = fs.openSync(tmpfile, 'r+')
-  fs.futimesSync(fd, d, d)
-  fs.closeSync(fd)
-  return fs.statSync(tmpfile).mtime > 1435410243000
-}
-
-function hasMillisRes (callback) {
-  let tmpfile = path.join('millis-test' + Date.now().toString() + Math.random().toString().slice(2))
-  tmpfile = path.join(os.tmpdir(), tmpfile)
-
-  // 550 millis past UNIX epoch
-  const d = new Date(1435410243862)
-  fs.writeFile(tmpfile, 'https://github.com/jprichardson/node-fs-extra/pull/141', err => {
-    if (err) return callback(err)
-    fs.open(tmpfile, 'r+', (err, fd) => {
-      if (err) return callback(err)
-      fs.futimes(fd, d, d, err => {
-        if (err) return callback(err)
-        fs.close(fd, err => {
-          if (err) return callback(err)
-          fs.stat(tmpfile, (err, stats) => {
-            if (err) return callback(err)
-            callback(null, stats.mtime > 1435410243000)
-          })
-        })
-      })
-    })
-  })
-}
-
-function timeRemoveMillis (timestamp) {
-  if (typeof timestamp === 'number') {
-    return Math.floor(timestamp / 1000) * 1000
-  } else if (timestamp instanceof Date) {
-    return new Date(Math.floor(timestamp.getTime() / 1000) * 1000)
-  } else {
-    throw new Error('fs-extra: timeRemoveMillis() unknown parameter type')
-  }
-}
 
 function utimesMillis (path, atime, mtime, callback) {
   // if (!HAS_MILLIS_RES) return fs.utimes(path, atime, mtime, callback)
@@ -28047,9 +28043,6 @@ function utimesMillisSync (path, atime, mtime) {
 }
 
 module.exports = {
-  hasMillisRes,
-  hasMillisResSync,
-  timeRemoveMillis,
   utimesMillis,
   utimesMillisSync
 }
@@ -28147,7 +28140,7 @@ if (!fs[gracefulQueue]) {
       return fs$close.call(fs, fd, function (err) {
         // This function uses the graceful-fs shared queue
         if (!err) {
-          retry()
+          resetQueue()
         }
 
         if (typeof cb === 'function')
@@ -28165,7 +28158,7 @@ if (!fs[gracefulQueue]) {
     function closeSync (fd) {
       // This function uses the graceful-fs shared queue
       fs$closeSync.apply(fs, arguments)
-      retry()
+      resetQueue()
     }
 
     Object.defineProperty(closeSync, previousSymbol, {
@@ -28207,14 +28200,13 @@ function patch (fs) {
 
     return go$readFile(path, options, cb)
 
-    function go$readFile (path, options, cb) {
+    function go$readFile (path, options, cb, startTime) {
       return fs$readFile(path, options, function (err) {
         if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$readFile, [path, options, cb]])
+          enqueue([go$readFile, [path, options, cb], err, startTime || Date.now(), Date.now()])
         else {
           if (typeof cb === 'function')
             cb.apply(this, arguments)
-          retry()
         }
       })
     }
@@ -28228,14 +28220,13 @@ function patch (fs) {
 
     return go$writeFile(path, data, options, cb)
 
-    function go$writeFile (path, data, options, cb) {
+    function go$writeFile (path, data, options, cb, startTime) {
       return fs$writeFile(path, data, options, function (err) {
         if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$writeFile, [path, data, options, cb]])
+          enqueue([go$writeFile, [path, data, options, cb], err, startTime || Date.now(), Date.now()])
         else {
           if (typeof cb === 'function')
             cb.apply(this, arguments)
-          retry()
         }
       })
     }
@@ -28250,14 +28241,13 @@ function patch (fs) {
 
     return go$appendFile(path, data, options, cb)
 
-    function go$appendFile (path, data, options, cb) {
+    function go$appendFile (path, data, options, cb, startTime) {
       return fs$appendFile(path, data, options, function (err) {
         if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$appendFile, [path, data, options, cb]])
+          enqueue([go$appendFile, [path, data, options, cb], err, startTime || Date.now(), Date.now()])
         else {
           if (typeof cb === 'function')
             cb.apply(this, arguments)
-          retry()
         }
       })
     }
@@ -28271,47 +28261,41 @@ function patch (fs) {
       cb = flags
       flags = 0
     }
-    return fs$copyFile(src, dest, flags, function (err) {
-      if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-        enqueue([fs$copyFile, [src, dest, flags, cb]])
-      else {
-        if (typeof cb === 'function')
-          cb.apply(this, arguments)
-        retry()
-      }
-    })
+    return go$copyFile(src, dest, flags, cb)
+
+    function go$copyFile (src, dest, flags, cb, startTime) {
+      return fs$copyFile(src, dest, flags, function (err) {
+        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
+          enqueue([go$copyFile, [src, dest, flags, cb], err, startTime || Date.now(), Date.now()])
+        else {
+          if (typeof cb === 'function')
+            cb.apply(this, arguments)
+        }
+      })
+    }
   }
 
   var fs$readdir = fs.readdir
   fs.readdir = readdir
   function readdir (path, options, cb) {
-    var args = [path]
-    if (typeof options !== 'function') {
-      args.push(options)
-    } else {
-      cb = options
+    if (typeof options === 'function')
+      cb = options, options = null
+
+    return go$readdir(path, options, cb)
+
+    function go$readdir (path, options, cb, startTime) {
+      return fs$readdir(path, options, function (err, files) {
+        if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
+          enqueue([go$readdir, [path, options, cb], err, startTime || Date.now(), Date.now()])
+        else {
+          if (files && files.sort)
+            files.sort()
+
+          if (typeof cb === 'function')
+            cb.call(this, err, files)
+        }
+      })
     }
-    args.push(go$readdir$cb)
-
-    return go$readdir(args)
-
-    function go$readdir$cb (err, files) {
-      if (files && files.sort)
-        files.sort()
-
-      if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-        enqueue([go$readdir, [args]])
-
-      else {
-        if (typeof cb === 'function')
-          cb.apply(this, arguments)
-        retry()
-      }
-    }
-  }
-
-  function go$readdir (args) {
-    return fs$readdir.apply(fs, args)
   }
 
   if (process.version.substr(0, 4) === 'v0.8') {
@@ -28436,14 +28420,13 @@ function patch (fs) {
 
     return go$open(path, flags, mode, cb)
 
-    function go$open (path, flags, mode, cb) {
+    function go$open (path, flags, mode, cb, startTime) {
       return fs$open(path, flags, mode, function (err, fd) {
         if (err && (err.code === 'EMFILE' || err.code === 'ENFILE'))
-          enqueue([go$open, [path, flags, mode, cb]])
+          enqueue([go$open, [path, flags, mode, cb], err, startTime || Date.now(), Date.now()])
         else {
           if (typeof cb === 'function')
             cb.apply(this, arguments)
-          retry()
         }
       })
     }
@@ -28455,13 +28438,79 @@ function patch (fs) {
 function enqueue (elem) {
   debug('ENQUEUE', elem[0].name, elem[1])
   fs[gracefulQueue].push(elem)
+  retry()
+}
+
+// keep track of the timeout between retry() calls
+var retryTimer
+
+// reset the startTime and lastTime to now
+// this resets the start of the 60 second overall timeout as well as the
+// delay between attempts so that we'll retry these jobs sooner
+function resetQueue () {
+  var now = Date.now()
+  for (var i = 0; i < fs[gracefulQueue].length; ++i) {
+    // entries that are only a length of 2 are from an older version, don't
+    // bother modifying those since they'll be retried anyway.
+    if (fs[gracefulQueue][i].length > 2) {
+      fs[gracefulQueue][i][3] = now // startTime
+      fs[gracefulQueue][i][4] = now // lastTime
+    }
+  }
+  // call retry to make sure we're actively processing the queue
+  retry()
 }
 
 function retry () {
+  // clear the timer and remove it to help prevent unintended concurrency
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+
+  if (fs[gracefulQueue].length === 0)
+    return
+
   var elem = fs[gracefulQueue].shift()
-  if (elem) {
-    debug('RETRY', elem[0].name, elem[1])
-    elem[0].apply(null, elem[1])
+  var fn = elem[0]
+  var args = elem[1]
+  // these items may be unset if they were added by an older graceful-fs
+  var err = elem[2]
+  var startTime = elem[3]
+  var lastTime = elem[4]
+
+  // if we don't have a startTime we have no way of knowing if we've waited
+  // long enough, so go ahead and retry this item now
+  if (startTime === undefined) {
+    debug('RETRY', fn.name, args)
+    fn.apply(null, args)
+  } else if (Date.now() - startTime >= 60000) {
+    // it's been more than 60 seconds total, bail now
+    debug('TIMEOUT', fn.name, args)
+    var cb = args.pop()
+    if (typeof cb === 'function')
+      cb.call(null, err)
+  } else {
+    // the amount of time between the last attempt and right now
+    var sinceAttempt = Date.now() - lastTime
+    // the amount of time between when we first tried, and when we last tried
+    // rounded up to at least 1
+    var sinceStart = Math.max(lastTime - startTime, 1)
+    // backoff. wait longer than the total time we've been retrying, but only
+    // up to a maximum of 100ms
+    var desiredDelay = Math.min(sinceStart * 1.2, 100)
+    // it's been long enough since the last retry, do it again
+    if (sinceAttempt >= desiredDelay) {
+      debug('RETRY', fn.name, args)
+      fn.apply(null, args.concat([startTime]))
+    } else {
+      // if we can't do this job yet, push it to the end of the queue
+      // and let the next iteration check again
+      fs[gracefulQueue].push(elem)
+    }
+  }
+
+  // schedule our next run if one isn't already scheduled
+  if (retryTimer === undefined) {
+    retryTimer = setTimeout(retry, 0)
   }
 }
 
@@ -28908,8 +28957,10 @@ function patch (fs) {
     return function (target, options) {
       var stats = options ? orig.call(fs, target, options)
         : orig.call(fs, target)
-      if (stats.uid < 0) stats.uid += 0x100000000
-      if (stats.gid < 0) stats.gid += 0x100000000
+      if (stats) {
+        if (stats.uid < 0) stats.uid += 0x100000000
+        if (stats.gid < 0) stats.gid += 0x100000000
+      }
       return stats;
     }
   }
@@ -29292,72 +29343,61 @@ exports.isPlainObject = isPlainObject;
 /***/ 6160:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-var _fs
+let _fs
 try {
   _fs = __nccwpck_require__(7758)
 } catch (_) {
   _fs = __nccwpck_require__(5747)
 }
+const universalify = __nccwpck_require__(9046)
+const { stringify, stripBom } = __nccwpck_require__(5902)
 
-function readFile (file, options, callback) {
-  if (callback == null) {
-    callback = options
-    options = {}
-  }
-
+async function _readFile (file, options = {}) {
   if (typeof options === 'string') {
-    options = {encoding: options}
+    options = { encoding: options }
   }
 
-  options = options || {}
-  var fs = options.fs || _fs
+  const fs = options.fs || _fs
 
-  var shouldThrow = true
-  if ('throws' in options) {
-    shouldThrow = options.throws
-  }
+  const shouldThrow = 'throws' in options ? options.throws : true
 
-  fs.readFile(file, options, function (err, data) {
-    if (err) return callback(err)
+  let data = await universalify.fromCallback(fs.readFile)(file, options)
 
-    data = stripBom(data)
+  data = stripBom(data)
 
-    var obj
-    try {
-      obj = JSON.parse(data, options ? options.reviver : null)
-    } catch (err2) {
-      if (shouldThrow) {
-        err2.message = file + ': ' + err2.message
-        return callback(err2)
-      } else {
-        return callback(null, null)
-      }
+  let obj
+  try {
+    obj = JSON.parse(data, options ? options.reviver : null)
+  } catch (err) {
+    if (shouldThrow) {
+      err.message = `${file}: ${err.message}`
+      throw err
+    } else {
+      return null
     }
+  }
 
-    callback(null, obj)
-  })
+  return obj
 }
 
-function readFileSync (file, options) {
-  options = options || {}
+const readFile = universalify.fromPromise(_readFile)
+
+function readFileSync (file, options = {}) {
   if (typeof options === 'string') {
-    options = {encoding: options}
+    options = { encoding: options }
   }
 
-  var fs = options.fs || _fs
+  const fs = options.fs || _fs
 
-  var shouldThrow = true
-  if ('throws' in options) {
-    shouldThrow = options.throws
-  }
+  const shouldThrow = 'throws' in options ? options.throws : true
 
   try {
-    var content = fs.readFileSync(file, options)
+    let content = fs.readFileSync(file, options)
     content = stripBom(content)
     return JSON.parse(content, options.reviver)
   } catch (err) {
     if (shouldThrow) {
-      err.message = file + ': ' + err.message
+      err.message = `${file}: ${err.message}`
       throw err
     } else {
       return null
@@ -29365,67 +29405,53 @@ function readFileSync (file, options) {
   }
 }
 
-function stringify (obj, options) {
-  var spaces
-  var EOL = '\n'
-  if (typeof options === 'object' && options !== null) {
-    if (options.spaces) {
-      spaces = options.spaces
-    }
-    if (options.EOL) {
-      EOL = options.EOL
-    }
-  }
+async function _writeFile (file, obj, options = {}) {
+  const fs = options.fs || _fs
 
-  var str = JSON.stringify(obj, options ? options.replacer : null, spaces)
+  const str = stringify(obj, options)
 
-  return str.replace(/\n/g, EOL) + EOL
+  await universalify.fromCallback(fs.writeFile)(file, str, options)
 }
 
-function writeFile (file, obj, options, callback) {
-  if (callback == null) {
-    callback = options
-    options = {}
-  }
-  options = options || {}
-  var fs = options.fs || _fs
+const writeFile = universalify.fromPromise(_writeFile)
 
-  var str = ''
-  try {
-    str = stringify(obj, options)
-  } catch (err) {
-    // Need to return whether a callback was passed or not
-    if (callback) callback(err, null)
-    return
-  }
+function writeFileSync (file, obj, options = {}) {
+  const fs = options.fs || _fs
 
-  fs.writeFile(file, str, options, callback)
-}
-
-function writeFileSync (file, obj, options) {
-  options = options || {}
-  var fs = options.fs || _fs
-
-  var str = stringify(obj, options)
+  const str = stringify(obj, options)
   // not sure if fs.writeFileSync returns anything, but just in case
   return fs.writeFileSync(file, str, options)
+}
+
+const jsonfile = {
+  readFile,
+  readFileSync,
+  writeFile,
+  writeFileSync
+}
+
+module.exports = jsonfile
+
+
+/***/ }),
+
+/***/ 5902:
+/***/ ((module) => {
+
+function stringify (obj, { EOL = '\n', finalEOL = true, replacer = null, spaces } = {}) {
+  const EOF = finalEOL ? EOL : ''
+  const str = JSON.stringify(obj, replacer, spaces)
+
+  return str.replace(/\n/g, EOL) + EOF
 }
 
 function stripBom (content) {
   // we do this because JSON.parse would convert it to a utf8 string if encoding wasn't specified
   if (Buffer.isBuffer(content)) content = content.toString('utf8')
-  content = content.replace(/^\uFEFF/, '')
-  return content
+  return content.replace(/^\uFEFF/, '')
 }
 
-var jsonfile = {
-  readFile: readFile,
-  readFileSync: readFileSync,
-  writeFile: writeFile,
-  writeFileSync: writeFileSync
-}
-
-module.exports = jsonfile
+module.exports = { stringify, stripBom }
 
 
 /***/ }),
@@ -46650,7 +46676,7 @@ module.exports = jsonfile
 /***/ 9060:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-const flatted = __nccwpck_require__(3112);
+const flatted = __nccwpck_require__(9511);
 const levels = __nccwpck_require__(7117);
 
 /**
@@ -46671,7 +46697,7 @@ class LoggingEvent {
     this.categoryName = categoryName;
     this.data = data;
     this.level = level;
-    this.context = Object.assign({}, context);
+    this.context = Object.assign({}, context); // eslint-disable-line prefer-object-spread
     this.pid = process.pid;
 
     if (location) {
@@ -46684,29 +46710,38 @@ class LoggingEvent {
   }
 
   serialise() {
-    const logData = this.data.map((e) => {
+    return flatted.stringify(this, (key, value) => {
       // JSON.stringify(new Error('test')) returns {}, which is not really useful for us.
       // The following allows us to serialize errors correctly.
-      if (e && e.message && e.stack) {
-        e = Object.assign({ message: e.message, stack: e.stack }, e);
+      // duck-typing for Error object
+      if (value && value.message && value.stack) {
+        // eslint-disable-next-line prefer-object-spread
+        value = Object.assign({message: value.message, stack: value.stack}, value);
       }
-      return e;
+      // JSON.stringify({a: parseInt('abc'), b: 1/0, c: -1/0}) returns {a: null, b: null, c: null}.
+      // The following allows us to serialize to NaN, Infinity and -Infinity correctly.
+      else if (typeof value === 'number' && (Number.isNaN(value) || !Number.isFinite(value))) {
+        value = value.toString();
+      }
+      // JSON.stringify([undefined]) returns [null].
+      // The following allows us to serialize to undefined correctly.
+      else if (typeof value === 'undefined') {
+        value = typeof value;
+      }
+      return value;
     });
-    this.data = logData;
-    return flatted.stringify(this);
   }
 
   static deserialise(serialised) {
     let event;
     try {
-      const rehydratedEvent = flatted.parse(serialised);
-      rehydratedEvent.data = rehydratedEvent.data.map((e) => {
-        if (e && e.message && e.stack) {
-          const fakeError = new Error(e);
-          Object.keys(e).forEach((key) => { fakeError[key] = e[key]; });
-          e = fakeError;
+      const rehydratedEvent = flatted.parse(serialised, (key, value) => {
+        if (value && value.message && value.stack) {
+          const fakeError = new Error(value);
+          Object.keys(value).forEach((k) => { fakeError[k] = value[k]; });
+          value = fakeError;
         }
-        return e;
+        return value;
       });
       event = new LoggingEvent(
         rehydratedEvent.categoryName,
@@ -46759,7 +46794,7 @@ function maxFileSizeUnitTransform(maxLogSize) {
 }
 
 function adapter(configAdapter, config) {
-  const newConfig = Object.assign({}, config);
+  const newConfig = Object.assign({}, config); // eslint-disable-line prefer-object-spread
   Object.keys(configAdapter).forEach((key) => {
     if (newConfig[key]) {
       newConfig[key] = configAdapter[key](config[key]);
@@ -46844,13 +46879,30 @@ const os = __nccwpck_require__(2087);
 
 const eol = os.EOL;
 
+function openTheStream(filename, pattern, options) {
+  const stream = new streams.DateRollingFileStream(
+    filename,
+    pattern,
+    options
+  );
+  stream.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.error('log4js.dateFileAppender - Writing to file %s, error happened ', filename, err);
+  });
+  stream.on("drain", () => {
+    process.emit("log4js:pause", false);
+  });
+  return stream;
+}
+
 /**
  * File appender that rolls files according to a date pattern.
- * @filename base filename.
- * @pattern the format that will be added to the end of filename when rolling,
+ * @param filename base filename.
+ * @param pattern the format that will be added to the end of filename when rolling,
  *          also used to check when to roll files - defaults to '.yyyy-MM-dd'
- * @layout layout function for log messages - defaults to basicLayout
- * @timezoneOffset optional timezone offset in minutes - defaults to system local
+ * @param layout layout function for log messages - defaults to basicLayout
+ * @param options - options to be passed to the underlying stream
+ * @param timezoneOffset - optional timezone offset in minutes (default system local)
  */
 function appender(
   filename,
@@ -46863,26 +46915,19 @@ function appender(
   // options should work for dateFile as well.
   options.maxSize = options.maxLogSize;
 
-  const logFile = new streams.DateRollingFileStream(
-    filename,
-    pattern,
-    options
-  );
-
-  logFile.on("drain", () => {
-    process.emit("log4js:pause", false);
-  });
+  const writer = openTheStream(filename, pattern, options);
 
   const app = function (logEvent) {
-    if (!logFile.write(layout(logEvent, timezoneOffset) + eol, "utf8")) {
+    if (!writer.writable) {
+      return;
+    }
+    if (!writer.write(layout(logEvent, timezoneOffset) + eol, "utf8")) {
       process.emit("log4js:pause", true);
     }
   };
 
   app.shutdown = function (complete) {
-    logFile.write('', 'utf-8', () => {
-      logFile.end(complete);
-    });
+    writer.end('', 'utf-8', complete);
   };
 
   return app;
@@ -46890,7 +46935,6 @@ function appender(
 
 function configure(config, layouts) {
   let layout = layouts.basicLayout;
-
   if (config.layout) {
     layout = layouts.layout(config.layout.type, config.layout);
   }
@@ -46898,6 +46942,9 @@ function configure(config, layouts) {
   if (!config.alwaysIncludePattern) {
     config.alwaysIncludePattern = false;
   }
+
+  // security default (instead of relying on streamroller default)
+  config.mode = config.mode || 0o600;
 
   return appender(
     config.filename,
@@ -46923,27 +46970,18 @@ const os = __nccwpck_require__(2087);
 
 const eol = os.EOL;
 
-function openTheStream(file, fileSize, numFiles, options) {
-  const stream = new streams.RollingFileStream(
-    file,
-    fileSize,
-    numFiles,
-    options
-  );
-  stream.on('error', (err) => {
-    console.error('log4js.fileAppender - Writing to file %s, error happened ', file, err); //eslint-disable-line
+let mainSighupListenerStarted = false;
+const sighupListeners = new Set();
+function mainSighupHandler() {
+  sighupListeners.forEach((app) => {
+    app.sighupHandler();
   });
-  stream.on('drain', () => {
-    process.emit("log4js:pause", false);
-  });
-  return stream;
 }
-
 
 /**
  * File Appender writing the logs to a text file. Supports rolling of logs by size.
  *
- * @param file file log messages will be written to
+ * @param file the file log messages will be written to
  * @param layout a function that takes a logEvent and returns a string
  *   (defaults to basicLayout).
  * @param logSize - the maximum size (in bytes) for a log file,
@@ -46954,10 +46992,11 @@ function openTheStream(file, fileSize, numFiles, options) {
  * @param timezoneOffset - optional timezone offset in minutes (default system local)
  */
 function fileAppender(file, layout, logSize, numBackups, options, timezoneOffset) {
+  if (typeof file !== "string" || file.length === 0) {
+    throw new Error(`Invalid filename: ${file}`);
+  }
   file = path.normalize(file);
-  numBackups = numBackups === undefined ? 5 : numBackups;
-  // there has to be at least one backup if logSize has been specified
-  numBackups = numBackups === 0 ? 1 : numBackups;
+  numBackups = (!numBackups && numBackups !== 0) ? 5 : numBackups;
 
   debug(
     'Creating file appender (',
@@ -46968,16 +47007,36 @@ function fileAppender(file, layout, logSize, numBackups, options, timezoneOffset
     timezoneOffset, ')'
   );
 
+  function openTheStream(filePath, fileSize, numFiles, opt) {
+    const stream = new streams.RollingFileStream(
+      filePath,
+      fileSize,
+      numFiles,
+      opt
+    );
+    stream.on('error', (err) => {
+      // eslint-disable-next-line no-console
+      console.error('log4js.fileAppender - Writing to file %s, error happened ', filePath, err);
+    });
+    stream.on('drain', () => {
+      process.emit("log4js:pause", false);
+    });
+    return stream;
+  }
+
   let writer = openTheStream(file, logSize, numBackups, options);
 
   const app = function (loggingEvent) {
+    if (!writer.writable) {
+      return;
+    }
     if (options.removeColor === true) {
       // eslint-disable-next-line no-control-regex
       const regex = /\x1b[[0-9;]*m/g;
       loggingEvent.data = loggingEvent.data.map(d => {
-        if (typeof d === 'string') return d.replace(regex, '')
-        return d
-      })
+        if (typeof d === 'string') return d.replace(regex, '');
+        return d;
+      });
     }
     if (!writer.write(layout(loggingEvent, timezoneOffset) + eol, "utf8")) {
       process.emit('log4js:pause', true);
@@ -46994,14 +47053,22 @@ function fileAppender(file, layout, logSize, numBackups, options, timezoneOffset
   };
 
   app.shutdown = function (complete) {
-    process.removeListener('SIGHUP', app.sighupHandler);
+    sighupListeners.delete(app);
+    if (sighupListeners.size === 0 && mainSighupListenerStarted) {
+      process.removeListener('SIGHUP', mainSighupHandler);
+      mainSighupListenerStarted = false;
+    }
     writer.end('', 'utf-8', complete);
   };
 
   // On SIGHUP, close and reopen all files. This allows this appender to work with
   // logrotate. Note that if you are using logrotate, you should not set
   // `logSize`.
-  process.on('SIGHUP', app.sighupHandler);
+  sighupListeners.add(app);
+  if (!mainSighupListenerStarted) {
+    process.on('SIGHUP', mainSighupHandler);
+    mainSighupListenerStarted = true;
+  }
 
   return app;
 }
@@ -47011,6 +47078,9 @@ function configure(config, layouts) {
   if (config.layout) {
     layout = layouts.layout(config.layout.type, config.layout);
   }
+
+  // security default (instead of relying on streamroller default)
+  config.mode = config.mode || 0o600;
 
   return fileAppender(
     config.filename,
@@ -47035,7 +47105,7 @@ const path = __nccwpck_require__(5622);
 const fs = __nccwpck_require__(5747);
 const os = __nccwpck_require__(2087);
 
-const eol = os.EOL || '\n';
+const eol = os.EOL;
 
 function touchFile(file, options) {
   // if the file exists, nothing to do
@@ -47043,26 +47113,56 @@ function touchFile(file, options) {
     return;
   }
 
+  // attempt to create the directory
+  const mkdir = (dir) => {
+    try {
+      return fs.mkdirSync(dir, {recursive: true});
+    }
+    // backward-compatible fs.mkdirSync for nodejs pre-10.12.0 (without recursive option)
+    catch (e) {
+      // recursive creation of parent first
+      if (e.code === 'ENOENT') {
+        mkdir(path.dirname(dir));
+        return mkdir(dir);
+      }
+
+      // throw error for all except EEXIST and EROFS (read-only filesystem)
+      if (e.code !== 'EEXIST' && e.code !== 'EROFS') {
+        throw e;
+      }
+
+      // EEXIST: throw if file and not directory
+      // EROFS : throw if directory not found
+      else {
+        try {
+          if (fs.statSync(dir).isDirectory()) {
+            return dir;
+          }
+          throw e;
+        } catch (err) {
+          throw e;
+        }
+      }
+    }
+  };
+  mkdir(path.dirname(file));
+
   // touch the file to apply flags (like w to truncate the file)
   const id = fs.openSync(file, options.flags, options.mode);
   fs.closeSync(id);
 }
 
 class RollingFileSync {
-  constructor(filename, size, backups, options) {
+  constructor(filename, maxLogSize, backups, options) {
     debug('In RollingFileStream');
 
-    function throwErrorIfArgumentsAreNotValid() {
-      if (!filename || !size || size <= 0) {
-        throw new Error('You must specify a filename and file size');
-      }
+    if (maxLogSize < 0) {
+      throw new Error(`maxLogSize (${maxLogSize}) should be > 0`);
     }
 
-    throwErrorIfArgumentsAreNotValid();
-
     this.filename = filename;
-    this.size = size;
-    this.backups = backups || 1;
+    this.size = maxLogSize;
+    this.backups = backups;
     this.options = options;
     this.currentSize = 0;
 
@@ -47099,20 +47199,15 @@ class RollingFileSync {
     }
 
     function byIndex(a, b) {
-      if (index(a) > index(b)) {
-        return 1;
-      }
-      if (index(a) < index(b)) {
-        return -1;
-      }
-
-      return 0;
+      return index(a) - index(b);
     }
 
     function increaseFileIndex(fileToRename) {
       const idx = index(fileToRename);
       debug(`Index of ${fileToRename} is ${idx}`);
-      if (idx < that.backups) {
+      if (that.backups === 0) {
+        fs.truncateSync(filename, 0);
+      } else if (idx < that.backups) {
         // on windows, you can get a EEXIST error if you rename a file to an existing file
         // so, we'll try to delete the file we're renaming to first
         try {
@@ -47138,7 +47233,7 @@ class RollingFileSync {
     renameTheFiles();
   }
 
-  /* eslint no-unused-vars:0 */
+  // eslint-disable-next-line no-unused-vars
   write(chunk, encoding) {
     const that = this;
 
@@ -47164,23 +47259,31 @@ class RollingFileSync {
 /**
  * File Appender writing the logs to a text file. Supports rolling of logs by size.
  *
- * @param file file log messages will be written to
+ * @param file the file log messages will be written to
  * @param layout a function that takes a logevent and returns a string
  *   (defaults to basicLayout).
  * @param logSize - the maximum size (in bytes) for a log file,
  *   if not provided then logs won't be rotated.
  * @param numBackups - the number of log files to keep after logSize
  *   has been reached (default 5)
- * @param timezoneOffset - optional timezone offset in minutes
- *   (default system local)
- * @param options - passed as is to fs options
+ * @param options - options to be passed to the underlying stream
+ * @param timezoneOffset - optional timezone offset in minutes (default system local)
  */
-function fileAppender(file, layout, logSize, numBackups, timezoneOffset, options) {
-  debug('fileSync appender created');
+function fileAppender(file, layout, logSize, numBackups, options, timezoneOffset) {
+  if (typeof file !== "string" || file.length === 0) {
+    throw new Error(`Invalid filename: ${file}`);
+  }
   file = path.normalize(file);
-  numBackups = numBackups === undefined ? 5 : numBackups;
-  // there has to be at least one backup if logSize has been specified
-  numBackups = numBackups === 0 ? 1 : numBackups;
+  numBackups = (!numBackups && numBackups !== 0) ? 5 : numBackups;
+
+  debug(
+    'Creating fileSync appender (',
+    file, ', ',
+    logSize, ', ',
+    numBackups, ', ',
+    options, ', ',
+    timezoneOffset, ')'
+  );
 
   function openTheStream(filePath, fileSize, numFiles) {
     let stream;
@@ -47224,7 +47327,7 @@ function configure(config, layouts) {
   const options = {
     flags: config.flags || 'a',
     encoding: config.encoding || 'utf8',
-    mode: config.mode || 0o644
+    mode: config.mode || 0o600
   };
 
   return fileAppender(
@@ -47232,8 +47335,8 @@ function configure(config, layouts) {
     layout,
     config.maxLogSize,
     config.backups,
-    config.timezoneOffset,
-    options
+    options,
+    config.timezoneOffset
   );
 }
 
@@ -47264,13 +47367,15 @@ coreAppenders.set('noLogFilter', __nccwpck_require__(3164));
 coreAppenders.set('file', __nccwpck_require__(9128));
 coreAppenders.set('dateFile', __nccwpck_require__(1339));
 coreAppenders.set('fileSync', __nccwpck_require__(8910));
+coreAppenders.set('tcp', __nccwpck_require__(2957));
 
 const appenders = new Map();
 
 const tryLoading = (modulePath, config) => {
   debug('Loading module from ', modulePath);
   try {
-    return require(modulePath); //eslint-disable-line
+    // eslint-disable-next-line global-require, import/no-dynamic-require
+    return require(modulePath);
   } catch (e) {
     // if the module was found, and we still got an error, then raise it
     configuration.throwExceptionIf(
@@ -47285,7 +47390,7 @@ const tryLoading = (modulePath, config) => {
 const loadAppenderModule = (type, config) => coreAppenders.get(type)
   || tryLoading(`./${type}`, config)
   || tryLoading(type, config)
-  || (require.main && tryLoading(path.join(path.dirname(require.main.filename), type), config))
+  || (require.main && require.main.filename && tryLoading(path.join(path.dirname(require.main.filename), type), config))
   || tryLoading(path.join(process.cwd(), type), config);
 
 const appendersLoading = new Set();
@@ -47314,14 +47419,24 @@ const createAppender = (name, config) => {
     `appender "${name}" is not valid (type "${appenderConfig.type}" could not be found)`
   );
   if (appenderModule.appender) {
-    debug(`DEPRECATION: Appender ${appenderConfig.type} exports an appender function.`);
+    process.emitWarning(
+      `Appender ${appenderConfig.type} exports an appender function.`,
+      "DeprecationWarning", "log4js-node-DEP0001"
+    );
+    debug("[log4js-node-DEP0001]",
+      `DEPRECATION: Appender ${appenderConfig.type} exports an appender function.`);
   }
   if (appenderModule.shutdown) {
-    debug(`DEPRECATION: Appender ${appenderConfig.type} exports a shutdown function.`);
+    process.emitWarning(
+      `Appender ${appenderConfig.type} exports a shutdown function.`,
+      "DeprecationWarning", "log4js-node-DEP0002"
+    );
+    debug("[log4js-node-DEP0002]",
+      `DEPRECATION: Appender ${appenderConfig.type} exports a shutdown function.`);
   }
 
   debug(`${name}: clustering.isMaster ? ${clustering.isMaster()}`);
-  debug(`${name}: appenderModule is ${__nccwpck_require__(1669).inspect(appenderModule)}`); // eslint-disable-line
+  debug(`${name}: appenderModule is ${__nccwpck_require__(1669).inspect(appenderModule)}`); // eslint-disable-line global-require
   return clustering.onlyOnMaster(() => {
     debug(`calling appenderModule.configure for ${name} / ${appenderConfig.type}`);
     return appenderModule.configure(
@@ -47330,26 +47445,34 @@ const createAppender = (name, config) => {
       appender => getAppender(appender, config),
       levels
     );
-  }, () => { });
+  }, /* istanbul ignore next: fn never gets called by non-master yet needed to pass config validation */ () => {});
 };
 
 const setup = (config) => {
   appenders.clear();
   appendersLoading.clear();
+  if (!config) {
+    return;
+  }
+
   const usedAppenders = [];
   Object.values(config.categories).forEach(category => {
-    usedAppenders.push(...category.appenders)
+    usedAppenders.push(...category.appenders);
   });
   Object.keys(config.appenders).forEach((name) => {
-    // dodgy hard-coding of special case for tcp-server which may not have
+    // dodgy hard-coding of special case for tcp-server and multiprocess which may not have
     // any categories associated with it, but needs to be started up anyway
-    if (usedAppenders.includes(name) || config.appenders[name].type === 'tcp-server') {
+    if (usedAppenders.includes(name) || config.appenders[name].type === 'tcp-server' 
+            || config.appenders[name].type === 'multiprocess') {
       getAppender(name, config);
     }
   });
 };
 
-setup({ appenders: { out: { type: 'stdout' } }, categories: { default: { appenders: ['out'], level: 'trace' } } });
+const init = () => {
+  setup();
+};
+init();
 
 configuration.addListener((config) => {
   configuration.throwExceptionIf(
@@ -47376,6 +47499,7 @@ configuration.addListener((config) => {
 configuration.addListener(setup);
 
 module.exports = appenders;
+module.exports.init = init;
 
 
 /***/ }),
@@ -47388,7 +47512,7 @@ function logLevelFilter(minLevelString, maxLevelString, appender, levels) {
   const maxLevel = levels.getLevel(maxLevelString, levels.FATAL);
   return (logEvent) => {
     const eventLevel = logEvent.level;
-    if (eventLevel.isGreaterThanOrEqualTo(minLevel) && eventLevel.isLessThanOrEqualTo(maxLevel)) {
+    if (minLevel.isLessThanOrEqualTo(eventLevel) && maxLevel.isGreaterThanOrEqualTo(eventLevel)) {
       appender(logEvent);
     }
   };
@@ -47454,6 +47578,42 @@ module.exports.configure = configure;
 
 /***/ }),
 
+/***/ 578:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+const debug = __nccwpck_require__(8237)('log4js:recording');
+
+const recordedEvents = [];
+
+function configure() {
+  return function (logEvent) {
+    debug(`received logEvent, number of events now ${recordedEvents.length + 1}`);
+    debug('log event was ', logEvent);
+    recordedEvents.push(logEvent);
+  };
+}
+
+function replay() {
+  return recordedEvents.slice();
+}
+
+function reset() {
+  recordedEvents.length = 0;
+}
+
+module.exports = {
+  configure,
+  replay,
+  playback: replay,
+  reset,
+  erase: reset
+};
+
+
+/***/ }),
+
 /***/ 6451:
 /***/ ((module) => {
 
@@ -47498,6 +47658,100 @@ function configure(config, layouts) {
 }
 
 exports.configure = configure;
+
+
+/***/ }),
+
+/***/ 2957:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+
+
+const debug = __nccwpck_require__(8237)('log4js:tcp');
+const net = __nccwpck_require__(1631);
+
+function appender(config, layout) {
+  let canWrite = false;
+  const buffer = [];
+  let socket;
+  let shutdownAttempts = 3;
+  let endMsg = '__LOG4JS__';
+
+  function write(loggingEvent) {
+    debug('Writing log event to socket');
+    canWrite = socket.write(`${layout(loggingEvent)}${endMsg}`, 'utf8');
+  }
+
+  function emptyBuffer() {
+    let evt;
+    debug('emptying buffer');
+    while ((evt = buffer.shift())) {
+      write(evt);
+    }
+  }
+
+  function createSocket() {
+    debug(`appender creating socket to ${config.host || 'localhost'}:${config.port || 5000}`);
+    endMsg = `${config.endMsg || '__LOG4JS__'}`;
+    socket = net.createConnection(config.port || 5000, config.host || 'localhost');
+    socket.on('connect', () => {
+      debug('socket connected');
+      emptyBuffer();
+      canWrite = true;
+    });
+    socket.on('drain', () => {
+      debug('drain event received, emptying buffer');
+      canWrite = true;
+      emptyBuffer();
+    });
+    socket.on('timeout', socket.end.bind(socket));
+    socket.on('error', (e) => {
+      debug('connection error', e);
+      canWrite = false;
+      emptyBuffer();
+    });
+    socket.on('close', createSocket);
+  }
+
+  createSocket();
+
+  function log(loggingEvent) {
+    if (canWrite) {
+      write(loggingEvent);
+    } else {
+      debug('buffering log event because it cannot write at the moment');
+      buffer.push(loggingEvent);
+    }
+  }
+
+  log.shutdown = function (cb) {
+    debug('shutdown called');
+    if (buffer.length && shutdownAttempts) {
+      debug('buffer has items, waiting 100ms to empty');
+      shutdownAttempts -= 1;
+      setTimeout(() => {
+        log.shutdown(cb);
+      }, 100);
+    } else {
+      socket.removeAllListeners('close');
+      socket.end(cb);
+    }
+  };
+  return log;
+}
+
+function configure(config, layouts) {
+  debug(`configure with config = ${config}`);
+  let layout = function (loggingEvent) {
+    return loggingEvent.serialise();
+  };
+  if (config.layout) {
+    layout = layouts.layout(config.layout.type, config.layout);
+  }
+  return appender(config, layout);
+}
+
+module.exports.configure = configure;
 
 
 /***/ }),
@@ -47668,7 +47922,11 @@ const setup = (config) => {
   });
 };
 
-setup({ categories: { default: { appenders: ['out'], level: 'OFF' } } });
+const init = () => {
+  setup({ categories: { default: { appenders: ['out'], level: 'OFF' } } });
+};
+init();
+
 configuration.addListener(setup);
 
 const configForCategory = (category) => {
@@ -47706,13 +47964,15 @@ const setEnableCallStackForCategory = (category, useCallStack) => {
   configForCategory(category).enableCallStack = useCallStack;
 };
 
-module.exports = {
+module.exports = categories;
+module.exports = Object.assign(module.exports, {
   appendersForCategory,
   getLevelForCategory,
   setLevelForCategory,
   getEnableCallStackForCategory,
   setEnableCallStackForCategory,
-};
+  init,
+});
 
 
 /***/ }),
@@ -47727,7 +47987,8 @@ const configuration = __nccwpck_require__(5813);
 let disabled = false;
 let cluster = null;
 try {
-  cluster = __nccwpck_require__(1531); //eslint-disable-line
+  // eslint-disable-next-line global-require
+  cluster = __nccwpck_require__(1531);
 } catch (e) {
   debug("cluster module not present");
   disabled = true;
@@ -47739,7 +48000,7 @@ let pm2 = false;
 let pm2InstanceVar = "NODE_APP_INSTANCE";
 
 const isPM2Master = () => pm2 && process.env[pm2InstanceVar] === "0";
-const isMaster = () => disabled || cluster.isMaster || isPM2Master();
+const isMaster = () => disabled || (cluster && cluster.isMaster) || isPM2Master();
 
 const sendToListeners = logEvent => {
   listeners.forEach(l => l(logEvent));
@@ -47794,7 +48055,7 @@ if (!disabled) {
       // we only want one of the app instances to write logs
       debug("listening for PM2 broadcast messages");
       process.on("message", receiver);
-    } else if (cluster.isMaster) {
+    } else if (cluster && cluster.isMaster) {
       debug("listening for cluster messages");
       cluster.on("message", receiver);
     } else {
@@ -47896,7 +48157,7 @@ module.exports = {
 /***/ 1061:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-/* eslint-disable no-plusplus */
+/* eslint no-underscore-dangle: ["error", { "allow": ["__statusCode", "_remoteAddress", "__headers", "_logging"] }] */
 
 const levels = __nccwpck_require__(7117);
 
@@ -47935,9 +48196,9 @@ function assembleTokens(req, res, customTokens) {
     for (let i = 0; i < a.length; ++i) {
       for (let j = i + 1; j < a.length; ++j) {
         // not === because token can be regexp object
-        /* eslint eqeqeq:0 */
+        // eslint-disable-next-line eqeqeq
         if (a[i].token == a[j].token) {
-          a.splice(j--, 1);
+          a.splice(j--, 1); // eslint-disable-line no-plusplus
         }
       }
     }
@@ -48135,7 +48396,6 @@ function matchRules(statusCode, currentLevel, ruleSet) {
  * @api public
  */
 module.exports = function getLogger(logger4js, options) {
-  /* eslint no-underscore-dangle:0 */
   if (typeof options === "string" || typeof options === "function") {
     options = { format: options };
   } else {
@@ -48171,7 +48431,12 @@ module.exports = function getLogger(logger4js, options) {
       };
 
       // hook on end request to emit the log entry of the HTTP request.
-      res.on("finish", () => {
+      let finished = false;
+      const handler = () => {
+        if (finished) {
+          return;
+        }
+        finished = true;
         res.responseTime = new Date() - start;
         // status code response level handling
         if (res.statusCode && options.level === "auto") {
@@ -48191,7 +48456,11 @@ module.exports = function getLogger(logger4js, options) {
           thisLogger.log(level, format(fmt, combinedTokens));
         }
         if (options.context) thisLogger.removeContext("res");
-      });
+      };
+      res.on("end", handler);
+      res.on("finish", handler);
+      res.on("error", handler);
+      res.on("close", handler);
     }
 
     // ensure next gets always called
@@ -48209,6 +48478,7 @@ const dateFormat = __nccwpck_require__(6821);
 const os = __nccwpck_require__(2087);
 const util = __nccwpck_require__(1669);
 const path = __nccwpck_require__(5622);
+const debug = __nccwpck_require__(8237)('log4js:layouts');
 
 const styles = {
   // styles
@@ -48351,14 +48621,42 @@ function patternLayout(pattern, tokens) {
     if (specifier) {
       format = specifier;
       // Pick up special cases
-      if (format === 'ISO8601') {
-        format = dateFormat.ISO8601_FORMAT;
-      } else if (format === 'ISO8601_WITH_TZ_OFFSET') {
-        format = dateFormat.ISO8601_WITH_TZ_OFFSET_FORMAT;
-      } else if (format === 'ABSOLUTE') {
-        format = dateFormat.ABSOLUTETIME_FORMAT;
-      } else if (format === 'DATE') {
-        format = dateFormat.DATETIME_FORMAT;
+      switch (format) {
+        case 'ISO8601':
+        case 'ISO8601_FORMAT':
+          format = dateFormat.ISO8601_FORMAT;
+          break;
+        case 'ISO8601_WITH_TZ_OFFSET':
+        case 'ISO8601_WITH_TZ_OFFSET_FORMAT':
+          format = dateFormat.ISO8601_WITH_TZ_OFFSET_FORMAT;
+          break;
+        case 'ABSOLUTE':
+          process.emitWarning(
+            "Pattern %d{ABSOLUTE} is deprecated in favor of %d{ABSOLUTETIME}. " + 
+            "Please use %d{ABSOLUTETIME} instead.",
+            "DeprecationWarning", "log4js-node-DEP0003"
+          );
+          debug("[log4js-node-DEP0003]",
+            "DEPRECATION: Pattern %d{ABSOLUTE} is deprecated and replaced by %d{ABSOLUTETIME}.");
+          // falls through
+        case 'ABSOLUTETIME':
+        case 'ABSOLUTETIME_FORMAT':
+          format = dateFormat.ABSOLUTETIME_FORMAT;
+          break;
+        case 'DATE':
+          process.emitWarning(
+            "Pattern %d{DATE} is deprecated due to the confusion it causes when used. " +
+            "Please use %d{DATETIME} instead.",
+            "DeprecationWarning", "log4js-node-DEP0004"
+          );
+          debug("[log4js-node-DEP0004]",
+            "DEPRECATION: Pattern %d{DATE} is deprecated and replaced by %d{DATETIME}.");
+          // falls through
+        case 'DATETIME':
+        case 'DATETIME_FORMAT':
+          format = dateFormat.DATETIME_FORMAT;
+          break;
+        // no default
       }
     }
     // Format the date
@@ -48451,7 +48749,6 @@ function patternLayout(pattern, tokens) {
     return loggingEvent.callStack || '';
   }
 
-  /* eslint quote-props:0 */
   const replacers = {
     c: categoryName,
     d: formatAsDate,
@@ -48520,7 +48817,6 @@ function patternLayout(pattern, tokens) {
     let result;
     let searchString = pattern;
 
-    /* eslint no-cond-assign:0 */
     while ((result = regex.exec(searchString)) !== null) {
       // const matchedString = result[0];
       const padding = result[1];
@@ -48774,6 +49070,7 @@ const categories = __nccwpck_require__(5798);
 const Logger = __nccwpck_require__(8048);
 const clustering = __nccwpck_require__(2560);
 const connectLogger = __nccwpck_require__(1061);
+const recordingModule = __nccwpck_require__(578);
 
 let enabled = false;
 
@@ -48801,6 +49098,11 @@ function loadConfigurationFile(filename) {
 }
 
 function configure(configurationFileOrObject) {
+  if (enabled) {
+    // eslint-disable-next-line no-use-before-define
+    shutdown();
+  }
+
   let configObject = configurationFileOrObject;
 
   if (typeof configObject === "string") {
@@ -48818,6 +49120,10 @@ function configure(configurationFileOrObject) {
   return log4js;
 }
 
+function recording() {
+  return recordingModule
+}
+
 /**
  * Shutdown all log appenders. This will first disable all writing to appenders
  * and then call the shutdown function each appender.
@@ -48832,15 +49138,25 @@ function shutdown(cb) {
   // not being able to be drained because of run-away log writes.
   enabled = false;
 
-  // Call each of the shutdown functions in parallel
+  // Clone out to maintain a reference
   const appendersToCheck = Array.from(appenders.values());
+
+  // Reset immediately to prevent leaks
+  appenders.init();
+  categories.init();
+
+  // Call each of the shutdown functions in parallel
   const shutdownFunctions = appendersToCheck.reduceRight(
     (accum, next) => (next.shutdown ? accum + 1 : accum),
     0
   );
+  if (shutdownFunctions === 0) {
+    debug("No appenders with shutdown functions found.");
+    return cb !== undefined && cb();
+  }
+
   let completed = 0;
   let error;
-
   debug(`Found ${shutdownFunctions} appenders with shutdown functions.`);
   function complete(err) {
     error = error || err;
@@ -48853,12 +49169,6 @@ function shutdown(cb) {
       }
     }
   }
-
-  if (shutdownFunctions === 0) {
-    debug("No appenders with shutdown functions found.");
-    return cb !== undefined && cb();
-  }
-
   appendersToCheck.filter(a => a.shutdown).forEach(a => a.shutdown(complete));
 
   return null;
@@ -48895,7 +49205,8 @@ const log4js = {
   shutdown,
   connectLogger,
   levels,
-  addLayout: layouts.addLayout
+  addLayout: layouts.addLayout,
+  recording,
 };
 
 module.exports = log4js;
@@ -48906,7 +49217,8 @@ module.exports = log4js;
 /***/ 8048:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-/* eslint no-underscore-dangle:0 */
+/* eslint no-underscore-dangle: ["error", { "allow": ["_log"] }] */
+
 const debug = __nccwpck_require__(8237)("log4js:logger");
 const LoggingEvent = __nccwpck_require__(9060);
 const levels = __nccwpck_require__(7117);
@@ -48915,17 +49227,28 @@ const categories = __nccwpck_require__(5798);
 const configuration = __nccwpck_require__(5813);
 
 const stackReg = /at (?:(.+)\s+\()?(?:(.+?):(\d+)(?::(\d+))?|([^)]+))\)?/;
+
 function defaultParseCallStack(data, skipIdx = 4) {
-  const stacklines = data.stack.split("\n").slice(skipIdx);
-  const lineMatch = stackReg.exec(stacklines[0]);
-  if (lineMatch && lineMatch.length === 6) {
-    return {
-      functionName: lineMatch[1],
-      fileName: lineMatch[2],
-      lineNumber: parseInt(lineMatch[3], 10),
-      columnNumber: parseInt(lineMatch[4], 10),
-      callStack: stacklines.join("\n")
-    };
+  try {
+    const stacklines = data.stack.split("\n").slice(skipIdx);
+    const lineMatch = stackReg.exec(stacklines[0]);
+    /* istanbul ignore else: failsafe */
+    if (lineMatch && lineMatch.length === 6) {
+      return {
+        functionName: lineMatch[1],
+        fileName: lineMatch[2],
+        lineNumber: parseInt(lineMatch[3], 10),
+        columnNumber: parseInt(lineMatch[4], 10),
+        callStack: stacklines.join("\n")
+      };
+    } else { // eslint-disable-line no-else-return
+      // will never get here unless nodejs has changes to Error
+      console.error('log4js.logger - defaultParseCallStack error'); // eslint-disable-line no-console
+    }
+  }
+  catch (err) {
+    // will never get error unless nodejs has breaking changes to Error
+    console.error('log4js.logger - defaultParseCallStack error', err); // eslint-disable-line no-console
   }
   return null;
 }
@@ -48976,7 +49299,11 @@ class Logger {
   }
 
   log(level, ...args) {
-    const logLevel = levels.getLevel(level, levels.INFO);
+    let logLevel = levels.getLevel(level);
+    if (!logLevel) {
+      this._log(levels.WARN, 'log4js:logger.log: invalid value for log-level as first parameter given: ', level);
+      logLevel = levels.INFO;
+    }
     if (this.isLevelEnabled(logLevel)) {
       this._log(logLevel, args);
     }
@@ -49024,11 +49351,11 @@ function addLevelMethods(target) {
   );
   const isLevelMethod = levelMethod[0].toUpperCase() + levelMethod.slice(1);
 
-  Logger.prototype[`is${isLevelMethod}Enabled`] = function() {
+  Logger.prototype[`is${isLevelMethod}Enabled`] = function () {
     return this.isLevelEnabled(level);
   };
 
-  Logger.prototype[levelMethod] = function(...args) {
+  Logger.prototype[levelMethod] = function (...args) {
     this.log(level, ...args);
   };
 }
@@ -49040,127 +49367,6 @@ configuration.addListener(() => {
 });
 
 module.exports = Logger;
-
-
-/***/ }),
-
-/***/ 3112:
-/***/ ((module) => {
-
-var Flatted = (function (Primitive, primitive) {
-
-  /*!
-   * ISC License
-   *
-   * Copyright (c) 2018, Andrea Giammarchi, @WebReflection
-   *
-   * Permission to use, copy, modify, and/or distribute this software for any
-   * purpose with or without fee is hereby granted, provided that the above
-   * copyright notice and this permission notice appear in all copies.
-   *
-   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-   * REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-   * AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-   * INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-   * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
-   * OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-   * PERFORMANCE OF THIS SOFTWARE.
-   */
-
-  var Flatted = {
-
-    parse: function parse(text, reviver) {
-      var input = JSON.parse(text, Primitives).map(primitives);
-      var value = input[0];
-      var $ = reviver || noop;
-      var tmp = typeof value === 'object' && value ?
-                  revive(input, new Set, value, $) :
-                  value;
-      return $.call({'': tmp}, '', tmp);
-    },
-
-    stringify: function stringify(value, replacer, space) {
-      for (var
-        firstRun,
-        known = new Map,
-        input = [],
-        output = [],
-        $ = replacer && typeof replacer === typeof input ?
-              function (k, v) {
-                if (k === '' || -1 < replacer.indexOf(k)) return v;
-              } :
-              (replacer || noop),
-        i = +set(known, input, $.call({'': value}, '', value)),
-        replace = function (key, value) {
-          if (firstRun) {
-            firstRun = !firstRun;
-            return value;
-          }
-          var after = $.call(this, key, value);
-          switch (typeof after) {
-            case 'object':
-              if (after === null) return after;
-            case primitive:
-              return known.get(after) || set(known, input, after);
-          }
-          return after;
-        };
-        i < input.length; i++
-      ) {
-        firstRun = true;
-        output[i] = JSON.stringify(input[i], replace, space);
-      }
-      return '[' + output.join(',') + ']';
-    }
-
-  };
-
-  return Flatted;
-
-  function noop(key, value) {
-    return value;
-  }
-
-  function revive(input, parsed, output, $) {
-    return Object.keys(output).reduce(
-      function (output, key) {
-        var value = output[key];
-        if (value instanceof Primitive) {
-          var tmp = input[value];
-          if (typeof tmp === 'object' && !parsed.has(tmp)) {
-            parsed.add(tmp);
-            output[key] = $.call(output, key, revive(input, parsed, tmp, $));
-          } else {
-            output[key] = $.call(output, key, tmp);
-          }
-        } else
-          output[key] = $.call(output, key, value);
-        return output;
-      },
-      output
-    );
-  }
-
-  function set(known, input, value) {
-    var index = Primitive(input.push(value) - 1);
-    known.set(value, index);
-    return index;
-  }
-
-  // the two kinds of primitives
-  //  1. the real one
-  //  2. the wrapped one
-
-  function primitives(value) {
-    return value instanceof Primitive ? Primitive(value) : value;
-  }
-
-  function Primitives(key, value) {
-    return typeof value === primitive ? new Primitive(value) : value;
-  }
-
-}(String, 'string'));
-module.exports = Flatted;
 
 
 /***/ }),
@@ -56934,13 +57140,21 @@ class DateRollingFileStream extends RollingFileWriteStream {
     if (!pattern) {
       pattern = 'yyyy-MM-dd';
     }
-    if (options.daysToKeep) {
-      options.numToKeep = options.daysToKeep;
-    }
-    if (pattern.startsWith('.')) {
-      pattern = pattern.substring(1);
-    }
     options.pattern = pattern;
+    if (!options.numBackups && options.numBackups !== 0) {
+      if (!options.daysToKeep && options.daysToKeep !== 0) {
+        options.daysToKeep = 1;
+      } else {
+        process.emitWarning(
+          "options.daysToKeep is deprecated due to the confusion it causes when used " + 
+          "together with file size rolling. Please use options.numBackups instead.",
+          "DeprecationWarning", "streamroller-DEP0001"
+        );
+      }
+      options.numBackups = options.daysToKeep;
+    } else {
+      options.daysToKeep = options.numBackups;
+    }
     super(filename, options);
     this.mode = this.options.mode;
   }
@@ -56970,12 +57184,14 @@ class RollingFileStream extends RollingFileWriteStream {
     if (size) {
       options.maxSize = size;
     }
-    if (!backups) {
-      backups = 1;
+    if (!options.numBackups && options.numBackups !== 0) {
+      if (!backups && backups !== 0) {
+        backups = 1;
+      }
+      options.numBackups = backups;
     }
-    options.numToKeep = backups;
     super(filename, options);
-    this.backups = this.options.numToKeep;
+    this.backups = options.numBackups;
     this.size = this.options.maxSize;
   }
 
@@ -56997,7 +57213,7 @@ const debug = __nccwpck_require__(8237)("streamroller:RollingFileWriteStream");
 const fs = __nccwpck_require__(5630);
 const path = __nccwpck_require__(5622);
 const newNow = __nccwpck_require__(9652);
-const format = __nccwpck_require__(3346);
+const format = __nccwpck_require__(6821);
 const { Writable } = __nccwpck_require__(2413);
 const fileNameFormatter = __nccwpck_require__(360);
 const fileNameParser = __nccwpck_require__(2592);
@@ -57016,7 +57232,7 @@ class RollingFileWriteStream extends Writable {
    * @param {number} options.numToKeep - The max numbers of files to keep.
    * @param {number} options.maxSize - The maxSize one file can reach. Unit is Byte.
    *                                   This should be more than 1024. The default is Number.MAX_SAFE_INTEGER.
-   * @param {string} options.mode - The mode of the files. The default is '0644'. Refer to stream.writable for more.
+   * @param {string} options.mode - The mode of the files. The default is '0600'. Refer to stream.writable for more.
    * @param {string} options.flags - The default is 'a'. Refer to stream.flags for more.
    * @param {boolean} options.compress - Whether to compress backup files.
    * @param {boolean} options.keepFileExt - Whether to keep the file extension.
@@ -57025,6 +57241,9 @@ class RollingFileWriteStream extends Writable {
    */
   constructor(filePath, options) {
     debug(`constructor: creating RollingFileWriteStream. path=${filePath}`);
+    if (typeof filePath !== "string" || filePath.length === 0) {
+      throw new Error(`Invalid filename: ${filePath}`);
+    }
     super(options);
     this.options = this._parseOption(options);
     this.fileObject = path.parse(filePath);
@@ -57036,13 +57255,15 @@ class RollingFileWriteStream extends Writable {
       alwaysIncludeDate: this.options.alwaysIncludePattern,
       needsIndex: this.options.maxSize < Number.MAX_SAFE_INTEGER,
       compress: this.options.compress,
-      keepFileExt: this.options.keepFileExt
+      keepFileExt: this.options.keepFileExt,
+      fileNameSep: this.options.fileNameSep
     });
 
     this.fileNameParser = fileNameParser({
       file: this.fileObject,
       keepFileExt: this.options.keepFileExt,
-      pattern: this.options.pattern
+      pattern: this.options.pattern,
+      fileNameSep: this.options.fileNameSep
     });
 
     this.state = {
@@ -57087,7 +57308,7 @@ class RollingFileWriteStream extends Writable {
       maxSize: Number.MAX_SAFE_INTEGER,
       numToKeep: Number.MAX_SAFE_INTEGER,
       encoding: "utf8",
-      mode: parseInt("0644", 8),
+      mode: parseInt("0600", 8),
       flags: "a",
       compress: false,
       keepFileExt: false,
@@ -57097,7 +57318,17 @@ class RollingFileWriteStream extends Writable {
     if (options.maxSize <= 0) {
       throw new Error(`options.maxSize (${options.maxSize}) should be > 0`);
     }
-    if (options.numToKeep <= 0) {
+    // options.numBackups will supercede options.numToKeep
+    if (options.numBackups || options.numBackups === 0) {
+      if (options.numBackups < 0) {
+        throw new Error(`options.numBackups (${options.numBackups}) should be >= 0`);
+      } else if (options.numBackups >= Number.MAX_SAFE_INTEGER) {
+        // to cater for numToKeep (include the hot file) at Number.MAX_SAFE_INTEGER
+        throw new Error(`options.numBackups (${options.numBackups}) should be < Number.MAX_SAFE_INTEGER`);
+      } else {
+        options.numToKeep = options.numBackups + 1;
+      }
+    } else if (options.numToKeep <= 0) {
       throw new Error(`options.numToKeep (${options.numToKeep}) should be > 0`);
     }
     debug(
@@ -57172,10 +57403,14 @@ class RollingFileWriteStream extends Writable {
         index: i + 1
       });
 
+      const moveAndCompressOptions = {
+        compress: this.options.compress && i === 0,
+        mode: this.options.mode
+      }
       await moveAndMaybeCompressFile(
         sourceFilePath,
         targetFilePath,
-        this.options.compress && i === 0
+        moveAndCompressOptions                
       );
     }
 
@@ -57202,7 +57437,7 @@ class RollingFileWriteStream extends Writable {
 
   // Sorted from the oldest to the latest
   async _getExistingFiles() {
-    const files = await fs.readdir(this.fileObject.dir).catch(() => []);
+    const files = await fs.readdir(this.fileObject.dir).catch( /* istanbul ignore next: will not happen on windows */ () => []);
 
     debug(`_getExistingFiles: files=${files}`);
     const existingFileDetails = files
@@ -57217,7 +57452,38 @@ class RollingFileWriteStream extends Writable {
   }
 
   _renewWriteStream() {
-    fs.ensureDirSync(this.fileObject.dir);
+    const mkdir = (dir) => {
+      try {
+        return fs.mkdirSync(dir, {recursive: true});
+      }
+      // backward-compatible fs.mkdirSync for nodejs pre-10.12.0 (without recursive option)
+      catch (e) {
+        // recursive creation of parent first
+        if (e.code === "ENOENT") {
+          mkdir(path.dirname(dir));
+          return mkdir(dir);
+        }
+
+        // throw error for all except EEXIST and EROFS (read-only filesystem)
+        if (e.code !== "EEXIST" && e.code !== "EROFS") {
+          throw e;
+        }
+
+        // EEXIST: throw if file and not directory
+        // EROFS : throw if directory not found
+        else {
+          try {
+            if (fs.statSync(dir).isDirectory()) {
+              return dir;
+            }
+            throw e;
+          } catch (err) {
+            throw e;
+          }
+        }
+      }
+    };
+    mkdir(this.fileObject.dir);
     const filePath = this.fileFormatter({
       date: this.state.currentDate,
       index: 0
@@ -57241,7 +57507,7 @@ class RollingFileWriteStream extends Writable {
     debug("_clean: existing files are: ", existingFileDetails);
     if (this._tooManyFiles(existingFileDetails.length)) {
       const fileNamesToRemove = existingFileDetails
-        .slice(0, existingFileDetails.length - this.options.numToKeep - 1)
+        .slice(0, existingFileDetails.length - this.options.numToKeep)
         .map(f => path.format({ dir: this.fileObject.dir, base: f.filename }));
       await deleteFiles(fileNamesToRemove);
     }
@@ -57269,16 +57535,18 @@ module.exports = RollingFileWriteStream;
 
 const debug = __nccwpck_require__(8237)("streamroller:fileNameFormatter");
 const path = __nccwpck_require__(5622);
-const FILENAME_SEP = ".";
 const ZIP_EXT = ".gz";
+const DEFAULT_FILENAME_SEP = ".";
 
 module.exports = ({
   file,
   keepFileExt,
   needsIndex,
   alwaysIncludeDate,
-  compress
+  compress,
+  fileNameSep
 }) => {
+  let FILENAME_SEP = fileNameSep || DEFAULT_FILENAME_SEP;
   const dirAndName = path.join(file.dir, file.name);
 
   const ext = f => f + file.ext;
@@ -57312,11 +57580,12 @@ module.exports = ({
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 const debug = __nccwpck_require__(8237)("streamroller:fileNameParser");
-const FILENAME_SEP = ".";
 const ZIP_EXT = ".gz";
-const format = __nccwpck_require__(3346);
+const format = __nccwpck_require__(6821);
+const DEFAULT_FILENAME_SEP = ".";
 
-module.exports = ({ file, keepFileExt, pattern }) => {
+module.exports = ({ file, keepFileExt, pattern, fileNameSep }) => {
+  let FILENAME_SEP = fileNameSep || DEFAULT_FILENAME_SEP;
   // All these functions take two arguments: f, the filename, and p, the result placeholder
   // They return the filename with any matching parts removed.
   // The "zip" function, for instance, removes the ".gz" part of the filename (if present)
@@ -57429,11 +57698,24 @@ const debug = __nccwpck_require__(8237)('streamroller:moveAndMaybeCompressFile')
 const fs = __nccwpck_require__(5630);
 const zlib = __nccwpck_require__(8761);
 
+const _parseOption = function(rawOptions){
+  const defaultOptions = {
+    mode: parseInt("0600", 8),
+    compress: false,
+  };
+  const options = Object.assign({}, defaultOptions, rawOptions);
+  debug(
+    `_parseOption: moveAndMaybeCompressFile called with option=${JSON.stringify(options)}`
+  );
+  return options;
+}
+
 const moveAndMaybeCompressFile = async (
   sourceFilePath,
   targetFilePath,
-  needCompress
+  options
 ) => {
+  options = _parseOption(options);
   if (sourceFilePath === targetFilePath) {
     debug(
       `moveAndMaybeCompressFile: source and target are the same, not doing anything`
@@ -57444,14 +57726,14 @@ const moveAndMaybeCompressFile = async (
 
       debug(
         `moveAndMaybeCompressFile: moving file from ${sourceFilePath} to ${targetFilePath} ${
-          needCompress ? "with" : "without"
+          options.compress ? "with" : "without"
         } compress`
       );
-      if (needCompress) {
+      if (options.compress) {
         await new Promise((resolve, reject) => {
           fs.createReadStream(sourceFilePath)
             .pipe(zlib.createGzip())
-            .pipe(fs.createWriteStream(targetFilePath))
+            .pipe(fs.createWriteStream(targetFilePath, {mode: options.mode}))
             .on("finish", () => {
               debug(
                 `moveAndMaybeCompressFile: finished compressing ${targetFilePath}, deleting ${sourceFilePath}`
@@ -57492,209 +57774,6 @@ module.exports = moveAndMaybeCompressFile;
 
 // allows us to inject a mock date in tests
 module.exports = () => new Date();
-
-
-/***/ }),
-
-/***/ 3346:
-/***/ ((module) => {
-
-"use strict";
-
-
-function padWithZeros(vNumber, width) {
-  var numAsString = vNumber.toString();
-  while (numAsString.length < width) {
-    numAsString = "0" + numAsString;
-  }
-  return numAsString;
-}
-
-function addZero(vNumber) {
-  return padWithZeros(vNumber, 2);
-}
-
-/**
- * Formats the TimeOffset
- * Thanks to http://www.svendtofte.com/code/date_format/
- * @private
- */
-function offset(timezoneOffset) {
-  var os = Math.abs(timezoneOffset);
-  var h = String(Math.floor(os / 60));
-  var m = String(os % 60);
-  if (h.length === 1) {
-    h = "0" + h;
-  }
-  if (m.length === 1) {
-    m = "0" + m;
-  }
-  return timezoneOffset < 0 ? "+" + h + m : "-" + h + m;
-}
-
-function datePart(date, displayUTC, part) {
-  return displayUTC ? date["getUTC" + part]() : date["get" + part]();
-}
-
-function asString(format, date) {
-  if (typeof format !== "string") {
-    date = format;
-    format = module.exports.ISO8601_FORMAT;
-  }
-  if (!date) {
-    date = module.exports.now();
-  }
-
-  var displayUTC = format.indexOf("O") > -1;
-
-  var vDay = addZero(datePart(date, displayUTC, "Date"));
-  var vMonth = addZero(datePart(date, displayUTC, "Month") + 1);
-  var vYearLong = addZero(datePart(date, displayUTC, "FullYear"));
-  var vYearShort = addZero(vYearLong.substring(2, 4));
-  var vYear = format.indexOf("yyyy") > -1 ? vYearLong : vYearShort;
-  var vHour = addZero(datePart(date, displayUTC, "Hours"));
-  var vMinute = addZero(datePart(date, displayUTC, "Minutes"));
-  var vSecond = addZero(datePart(date, displayUTC, "Seconds"));
-  var vMillisecond = padWithZeros(
-    datePart(date, displayUTC, "Milliseconds"),
-    3
-  );
-  var vTimeZone = offset(date.getTimezoneOffset());
-  var formatted = format
-    .replace(/dd/g, vDay)
-    .replace(/MM/g, vMonth)
-    .replace(/y{1,4}/g, vYear)
-    .replace(/hh/g, vHour)
-    .replace(/mm/g, vMinute)
-    .replace(/ss/g, vSecond)
-    .replace(/SSS/g, vMillisecond)
-    .replace(/O/g, vTimeZone);
-  return formatted;
-}
-
-function extractDateParts(pattern, str, missingValuesDate) {
-  var matchers = [
-    {
-      pattern: /y{1,4}/,
-      regexp: "\\d{1,4}",
-      fn: function(date, value) {
-        date.setFullYear(value);
-      }
-    },
-    {
-      pattern: /MM/,
-      regexp: "\\d{1,2}",
-      fn: function(date, value) {
-        date.setMonth(value - 1);
-      }
-    },
-    {
-      pattern: /dd/,
-      regexp: "\\d{1,2}",
-      fn: function(date, value) {
-        date.setDate(value);
-      }
-    },
-    {
-      pattern: /hh/,
-      regexp: "\\d{1,2}",
-      fn: function(date, value) {
-        date.setHours(value);
-      }
-    },
-    {
-      pattern: /mm/,
-      regexp: "\\d\\d",
-      fn: function(date, value) {
-        date.setMinutes(value);
-      }
-    },
-    {
-      pattern: /ss/,
-      regexp: "\\d\\d",
-      fn: function(date, value) {
-        date.setSeconds(value);
-      }
-    },
-    {
-      pattern: /SSS/,
-      regexp: "\\d\\d\\d",
-      fn: function(date, value) {
-        date.setMilliseconds(value);
-      }
-    },
-    {
-      pattern: /O/,
-      regexp: "[+-]\\d{3,4}|Z",
-      fn: function(date, value) {
-        if (value === "Z") {
-          value = 0;
-        }
-        var offset = Math.abs(value);
-        var minutes = (offset % 100) + Math.floor(offset / 100) * 60;
-        date.setMinutes(date.getMinutes() + (value > 0 ? minutes : -minutes));
-      }
-    }
-  ];
-
-  var parsedPattern = matchers.reduce(
-    function(p, m) {
-      if (m.pattern.test(p.regexp)) {
-        m.index = p.regexp.match(m.pattern).index;
-        p.regexp = p.regexp.replace(m.pattern, "(" + m.regexp + ")");
-      } else {
-        m.index = -1;
-      }
-      return p;
-    },
-    { regexp: pattern, index: [] }
-  );
-
-  var dateFns = matchers.filter(function(m) {
-    return m.index > -1;
-  });
-  dateFns.sort(function(a, b) {
-    return a.index - b.index;
-  });
-
-  var matcher = new RegExp(parsedPattern.regexp);
-  var matches = matcher.exec(str);
-  if (matches) {
-    var date = missingValuesDate || module.exports.now();
-    dateFns.forEach(function(f, i) {
-      f.fn(date, matches[i + 1]);
-    });
-    return date;
-  }
-
-  throw new Error(
-    "String '" + str + "' could not be parsed as '" + pattern + "'"
-  );
-}
-
-function parse(pattern, str, missingValuesDate) {
-  if (!pattern) {
-    throw new Error("pattern must be supplied");
-  }
-
-  return extractDateParts(pattern, str, missingValuesDate);
-}
-
-/**
- * Used for testing - replace this function with a fixed date.
- */
-function now() {
-  return new Date();
-}
-
-module.exports = asString;
-module.exports.asString = asString;
-module.exports.parse = parse;
-module.exports.now = now;
-module.exports.ISO8601_FORMAT = "yyyy-MM-ddThh:mm:ss.SSS";
-module.exports.ISO8601_WITH_TZ_OFFSET_FORMAT = "yyyy-MM-ddThh:mm:ss.SSSO";
-module.exports.DATETIME_FORMAT = "dd MM yyyy hh:mm:ss.SSS";
-module.exports.ABSOLUTETIME_FORMAT = "hh:mm:ss.SSS";
 
 
 /***/ }),
@@ -58150,27 +58229,26 @@ exports.getUserAgent = getUserAgent;
 "use strict";
 
 
-exports.E = function (fn) {
-  return Object.defineProperty(function () {
-    if (typeof arguments[arguments.length - 1] === 'function') fn.apply(this, arguments)
+exports.fromCallback = function (fn) {
+  return Object.defineProperty(function (...args) {
+    if (typeof args[args.length - 1] === 'function') fn.apply(this, args)
     else {
       return new Promise((resolve, reject) => {
-        arguments[arguments.length] = (err, res) => {
-          if (err) return reject(err)
-          resolve(res)
-        }
-        arguments.length++
-        fn.apply(this, arguments)
+        fn.call(
+          this,
+          ...args,
+          (err, res) => (err != null) ? reject(err) : resolve(res)
+        )
       })
     }
   }, 'name', { value: fn.name })
 }
 
-exports.p = function (fn) {
-  return Object.defineProperty(function () {
-    const cb = arguments[arguments.length - 1]
-    if (typeof cb !== 'function') return fn.apply(this, arguments)
-    else fn.apply(this, arguments).then(r => cb(null, r), cb)
+exports.fromPromise = function (fn) {
+  return Object.defineProperty(function (...args) {
+    const cb = args[args.length - 1]
+    if (typeof cb !== 'function') return fn.apply(this, args)
+    else fn.apply(this, args.slice(0, -1)).then(r => cb(null, r), cb)
   }, 'name', { value: fn.name })
 }
 
